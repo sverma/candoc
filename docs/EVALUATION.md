@@ -1,0 +1,49 @@
+# Document evidence assessment
+
+Candoc v1 uses a deterministic, auditable English-language rule engine (`evidence-1.0`). No language-model key is needed for the score. An optional, separately consented semantic commentary layer can send filtered document excerpts to OpenAI when the operator configures an API key. This baseline is **not** employment verification, a fraud detector, a validated psychometric assessment, or a predictor of performance. It cannot establish that a claim is true. The UI must call the result an **Evidence score**, never a talent or suitability rating.
+
+The score helps candidates improve documentation and gives a human reviewer traceable statements. Do not use it to automatically shortlist, accept, reject, or rank a person for employment. Review actual work, discuss context with the candidate, and use job-specific human evaluation. Strong evidence presentation does not establish strong job performance; sparse documentation does not establish weak performance.
+
+## Scored inputs
+
+Only candidate-supplied resume text and optional candidate-supplied LinkedIn text enter the score. Repeated identical lines are deduplicated. Public GitHub data is supplemental and **cannot change any dimension or the aggregate score**, so absent, private and unavailable external accounts do not cause a score penalty. Candidates can describe private or non-code work in their resume.
+
+The parser uses action verbs, work-context terms, named skills, deliverables, validation language and section headings. It emits bounded verbatim snippets for inspection. It ignores recognized demographic lines, a leading name/headline, contact information, education/certification sections and explicit prompt-like instructions. It does not compare employers or universities against prestige lists, estimate age, compute tenure/gaps, or use followers and stars. These safeguards are a baseline, not a guarantee against every proxy or every unusual format. Human review remains necessary.
+
+## Weights and exact anchors
+
+Each dimension starts at 1 and adds one point for each criterion below, up to 5. The aggregate is the weighted sum, rounded to two decimal places.
+
+| Dimension | Weight | Four additive criteria, one point each |
+| --- | --- | --- |
+| Skills in context | 25% | A named skill occurs; a skill occurs in an action statement; two such statements; three such statements including an outcome. |
+| Experience detail | 25% | An action statement occurs; an action statement includes work scope; at least three scoped statements; at least four scoped statements with two stated outcomes. |
+| Outcomes & impact | 20% | Outcome language occurs; an outcome accompanies a scoped action; at least two such statements; at least three such statements. |
+| Work examples | 20% | A concrete deliverable accompanies an action; at least two such statements; a deliverable includes testing/review/validation language; at least three deliverable statements including two validation statements. |
+| Document clarity | 10% | A readable 5–65 word statement; at least three readable statements; a recognized section heading; at least five readable statements and two headings. |
+
+Numerical metrics are surfaced first among outcome snippets but **do not give additional points**. Accurate qualitative outcomes count. Counts are counts of distinct supporting statements, not years of experience or numbers of employers. Skill vocabulary includes broad business, design, operations, research and technical terms, plus the candidate's stated skills. It is not exhaustive. No score is a measure of mastery or a verified claim.
+
+Confidence describes **rule coverage**, not truth: high requires at least five scoped action statements and eight readable statements; medium requires at least two scoped action statements; otherwise low. Non-English documents, parsing failures, unusual headings, terse writing, unsupported synonyms and complex layouts can produce misleadingly low coverage. No OCR is performed on image-only documents; candidates should provide a text-bearing PDF, DOCX or TXT and review the assessment.
+
+## Public sources
+
+GitHub access is triggered only after candidate consent. User input is restricted to a bare username or an `https://github.com/username` URL. Requests use fixed `https://api.github.com` endpoints, reject redirects, have network timeouts and bounded response sizes, and never clone or execute repository code. Up to ten recently updated public repositories are read, excluding forks; the README and language list of up to three originals are inspected. Repository descriptions and observed languages are displayed as public observations. README text is retained transiently during analysis, not treated as instructions, not scored, and not represented as proof of authorship or code quality. Source observations and status are persisted in the assessment. `GITHUB_TOKEN` can increase API capacity; it is optional and never returned to the client. Rate limits, missing accounts and network errors produce explicit unavailable source status.
+
+The GitHub account is candidate-supplied and ownership is not verified. Public repository metadata can describe a team's work, autogenerated code or work the person did not author. Language byte counts do not establish competence. Private contribution history is not inspected. Stars, followers, account age and popularity never enter the rubric.
+
+LinkedIn full-profile API access is restricted. V1 accepts a profile URL as a reference plus candidate-provided LinkedIn export/text. It does not scrape LinkedIn or claim API verification. Official full-profile integration requires separate approved access and an eligible use case. Sources: [LinkedIn API access](https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access), [LinkedIn Profile API restrictions](https://learn.microsoft.com/en-us/linkedin/shared/integrations/people/profile-api), [GitHub REST rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
+## Optional semantic commentary
+
+Set `OPENAI_API_KEY` and optionally `AI_MODEL` (default `gpt-6-luna`) to enable the hosted semantic layer. Model availability depends on the operator's API account. Without a configured key, a consented analysis returns explicit `not_configured` status rather than pretending AI was used. No provider call is attempted without both the key and the candidate's separate `consent_external_ai` permission. The candidate should understand that their document excerpts will be processed by OpenAI before enabling this option.
+
+`app/semantic.py` uses a fixed OpenAI Responses API endpoint, `store:false`, no tools, at most 45,000 source characters and 2,800 output tokens, bounded responses and a 35-second timeout. No paid API call is part of the test suite. Recognized contact/demographic lines are filtered from the input; filtering does not guarantee removal of all personal information, so consent covers transmission of the selected document excerpts. `store:false` disables stored response state; it is **not** a claim of zero data retention by the provider. Operators should review their account's applicable retention settings and [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data).
+
+Strict JSON output supplies observations, each with a source identifier, exact quotation and interpretation, plus neutral clarification questions. The app checks that quotations are literal substrings of the supplied excerpts and discards fabricated quotations and recognizable prohibited assessment/protected-trait commentary. The prompt explicitly excludes candidate ratings, hiring recommendations, protected traits and inferred verification. Interpretations can still be inaccurate and require human review. This layer never changes the deterministic score, irrespective of success, unavailable model, malformed output, refusal, quota or network failure. Provider errors and keys are not exposed to clients. Paid usage is triggered by candidate analysis requests, subject to the backend's analysis rate limit; operators should set an API project spend limit.
+
+Current API integration references: [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create), [Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [API pricing](https://developers.openai.com/api/docs/pricing). The small model is an economical starting point, not a demonstrated best choice for this hiring workflow. Domain-specific evaluation is still required.
+
+## Improvement path
+
+Before using any assessment in a real hiring process, validate it against job-relevant, independently reviewed criteria and measure disparate impact and format/language sensitivity. Add candidate correction/appeal handling and document changes to rubric versions. A future opt-in semantic assistant can explain evidence with exact source references and uncertainty, but must not fabricate verification or silently replace these anchors. Changing versions must invalidate or explicitly label stale assessments. Never send candidate documents to an external model without disclosure and consent.

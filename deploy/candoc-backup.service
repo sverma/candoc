@@ -1,0 +1,10 @@
+[Unit]
+Description=Candoc private database and resume backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/candock/deploy/backup.sh
+User=root
+UMask=0077

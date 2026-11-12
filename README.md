@@ -1,0 +1,84 @@
+# Candoc
+
+**Companies apply to people.** An open-source reverse hiring marketplace with private candidate profiles, resume evidence review, public GitHub observations, and consent-based introductions.
+
+Live application: [candoc.org](https://candoc.org) · Source: [sverma/candoc](https://github.com/sverma/candoc)
+
+Candidates upload their own resume, review a transparent **1–5 document evidence score**, and choose whether companies can discover their profile. Companies create an account, search published profiles, and send a role, compensation range, work arrangement, and personal introduction. Contact details are shared only after acceptance.
+
+## Included
+
+- Candidate and company signup/login with Argon2id password hashes, revocable cookie sessions, origin checks and request limits.
+- PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
+- Five weighted evidence criteria with traceable excerpts and improvement suggestions.
+- Optional public GitHub API enrichment: repository descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
+- Candidate-supplied LinkedIn text. A LinkedIn URL alone does not grant profile API access. No automated LinkedIn scraping.
+- Optional, separately consented OpenAI semantic commentary with source-checked quotations. The API key stays on the server. No key is included in this repository.
+- Candidate search, introduction inbox, accept/decline, account export and permanent live-account deletion.
+- Responsive React frontend, FastAPI API, PostgreSQL storage, Docker Compose and nginx HTTPS deployment.
+
+## Assessment boundaries
+
+The numeric score describes evidence in a document; it is not a person's quality, verified proficiency, employability, or suitability for a role. It is deterministic and does not change when GitHub is missing or unavailable. AI commentary adds context and questions; it never silently changes the numeric score. Human review is required for employment decisions.
+
+The initial rubric is English-language and heuristic. Keyword coverage, document formatting, extraction and writing style can affect results. It has not been validated as a predictor of job performance. Resume/LinkedIn statements and GitHub authorship are not independently verified. Scanned PDFs require OCR before upload. See [evaluation details](docs/EVALUATION.md).
+
+## Local development
+
+Use Python 3.12+ and Node 24+.
+
+```sh
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+cd backend
+APP_URL=http://localhost:5173 UPLOAD_DIR=./data/resumes .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite forwards `/api` to the local API. Development defaults to SQLite. There are no seeded users or invented live statistics.
+
+```sh
+cd backend
+.venv/bin/python -m pytest -q
+cd ../frontend
+npm run build
+```
+
+## Server deployment
+
+The deployed service directory is `/opt/candock`; the internal Compose project and volume names retain `candock` across brand changes so data is not lost. Public branding is **Candoc**. The API and database have no public ports. The frontend binds only `127.0.0.1:8280`, behind the host nginx TLS proxy.
+
+1. Copy this source to `/opt/candock` on an Ubuntu host with Docker Compose and nginx.
+2. Copy `.env.example` to `.env`, set a random hexadecimal `POSTGRES_PASSWORD`, the HTTPS `APP_URL`, and optional provider credentials. Set file mode `600`. Use URL-safe database passwords because they are interpolated into `DATABASE_URL`.
+3. Point your domain's A record to the server. Adapt the hostname in `deploy/nginx-http.conf`, install it in nginx, and obtain a certificate with certbot webroot at `/var/www/candock-acme`.
+4. Install the matching `deploy/nginx-https.conf`, run `nginx -t`, then reload nginx. Configure a certbot deploy hook to reload nginx after renewal.
+5. Run `docker compose up -d --build`. Check `docker compose ps` and `/api/health` through HTTPS.
+
+Do not run `docker compose config` into shared logs: the resolved configuration contains secrets. Never commit `.env`, database volumes, original resumes, or backups. One API worker is intentional: request limits are process-local. Before scaling workers or replicas, move limits and analysis concurrency control to shared storage.
+
+## AI configuration and privacy
+
+Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the API: `docker compose up -d --force-recreate api`. The default model is `gpt-6-luna`, configurable without a source change. Provider model access and rates depend on your account. Requests have bounded input/output and timeouts; provider failure leaves the rubric result usable. A separate profile checkbox explicitly authorizes sending document excerpts to OpenAI. Without permission no AI request is made; public GitHub permission is separate.
+
+OpenAI requests use `store: false`; this is not a guarantee of zero provider retention. Consult your provider's current data policies and account controls. The adapter strips recognized contact/demographic metadata, but this is not exhaustive anonymization. Candidates must review their documents and assessment before making their profile visible.
+
+LinkedIn integration uses pasted/exported candidate text rather than an API whose access has not been approved. Companies are self-registered and their identities are not verified. Email verification, email delivery/password recovery, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+
+## Operations, backup and restore
+
+Docker restart policies restore services after host restart. `docker compose logs --tail=100 api` shows operational errors without provider keys. Health checks cover API/database availability. Host TLS certificates renew through certbot; nginx must reload following renewal.
+
+Install `deploy/candoc-backup.service` and `.timer` under `/etc/systemd/system/`, then enable `candoc-backup.timer`. Backups run at approximately **08:45 India time** daily, retain seven days locally, and are root-only in `/var/backups/candock`. They include sensitive data. Deleted accounts can remain in these retained backups for up to seven days; do not silently restore deleted accounts. Off-server backup replication is not configured.
+
+To restore into a stopped API, identify a backup directory, stop `api web`, and pipe the database gzip into `docker compose exec -T db psql -U candock -d candock` against an empty database. Restore `resumes.tar.gz` into the API's `/data` volume, set ownership `10001:10001`, then start services. Restoration is destructive to the target database and must be reviewed carefully. The release smoke test verifies workflows; restore into a separate environment before relying on a disaster recovery procedure.
+
+## Open source
+
+MIT licensed. Dependencies retain their own licenses. All secrets, user records and uploaded documents are excluded from source releases. See [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md).
