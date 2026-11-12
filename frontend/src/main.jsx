@@ -715,6 +715,11 @@ function AuthPage({ signup = false }) {
                 </button>
               </div>
             </label>
+            {!signup && (
+              <p className="recovery-link">
+                <Link to="/forgot-password">Forgot password?</Link>
+              </p>
+            )}
             {signup && (
               <p className="form-fine">
                 By creating an account, you agree to our{" "}
@@ -740,6 +745,163 @@ function AuthPage({ signup = false }) {
         </span>
       </main>
     </div>
+  );
+}
+function PasswordRecovery({ reset = false }) {
+  const { setUser } = useAuth();
+  const navigate = useNavigate();
+  const [token] = useState(
+    () => new URLSearchParams(window.location.hash.slice(1)).get("token") || "",
+  );
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [complete, setComplete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (reset && window.location.hash)
+      navigate("/reset-password", { replace: true });
+  }, [reset, navigate]);
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    if (reset && password !== confirm) {
+      setError("Your passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(reset ? "/auth/reset-password" : "/auth/forgot-password", {
+        method: "POST",
+        body: reset ? { token, password } : { email },
+      });
+      if (reset) {
+        setUser(null);
+        setPassword("");
+        setConfirm("");
+      }
+      setComplete(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="recovery-page">
+      <Logo />
+      <section className="panel recovery-card">
+        <span className="section-kicker">
+          {reset ? "A FRESH START" : "LET’S GET YOU BACK IN"}
+        </span>
+        <h1>
+          {complete
+            ? reset
+              ? "Password updated."
+              : "Check your inbox."
+            : reset
+              ? "Choose a new password."
+              : "Forgot your password?"}
+        </h1>
+        {complete ? (
+          <>
+            <p role="status">
+              {reset
+                ? "Your password has been changed and your previous sessions have been signed out. Log in with your new password."
+                : "If an account matches this email, we’ll attempt to send a reset link. Check your inbox and spam folder. The link expires after 20 minutes."}
+            </p>
+            {!reset && (
+              <p className="small-muted">
+                Only the most recently requested link will work. If an email
+                doesn’t arrive, wait a few minutes before trying again.
+              </p>
+            )}
+            <Link className="button dark full" to="/login">
+              Back to log in <ArrowRight size={17} />
+            </Link>
+            {!reset && (
+              <button className="text-link" onClick={() => setComplete(false)}>
+                Try another request
+              </button>
+            )}
+          </>
+        ) : reset && !token ? (
+          <>
+            <Alert error="This reset link is missing or invalid. Open the complete link from your latest email, or request a new one." />
+            <Link className="button dark full" to="/forgot-password">
+              Request a new link
+            </Link>
+          </>
+        ) : (
+          <>
+            <p>
+              {reset
+                ? "Use at least 12 characters. A successful reset signs your account out on every device."
+                : "Enter your account email and we’ll help you reset your password. This works for candidates and companies."}
+            </p>
+            <form onSubmit={submit}>
+              <Alert error={error} />
+              {reset ? (
+                <>
+                  <Field
+                    label="New password"
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    minLength={12}
+                    maxLength={128}
+                    required
+                  />
+                  <Field
+                    label="Confirm new password"
+                    name="confirm_password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirm}
+                    onChange={(event) => setConfirm(event.target.value)}
+                    minLength={12}
+                    maxLength={128}
+                    required
+                  />
+                </>
+              ) : (
+                <Field
+                  label="Email address"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  maxLength={254}
+                  placeholder="you@example.com"
+                  required
+                />
+              )}
+              <button className="button dark full" disabled={busy}>
+                {busy && <LoaderCircle className="spin" size={18} />}
+                {reset ? "Update password" : "Send reset link"}
+              </button>
+              {reset && error && (
+                <Link className="text-link" to="/forgot-password">
+                  Request a new reset link
+                </Link>
+              )}
+            </form>
+          </>
+        )}
+        {!complete && (
+          <Link className="back-link" to="/login">
+            <ArrowLeft size={16} /> Back to log in
+          </Link>
+        )}
+      </section>
+      <p className="small-muted">
+        <LockKeyhole size={14} /> We never email your password.
+      </p>
+    </main>
   );
 }
 function Field({ label, hint, ...props }) {
@@ -2867,11 +3029,13 @@ function Privacy() {
         <p>
           Company identities and email addresses are not independently verified
           in this initial release. Use your own judgment before sharing
-          additional information. Password reset and email verification are not
-          available yet. We use an essential session cookie to keep you signed
-          in. Access controls separate candidate and company data. The
-          production service uses HTTPS. We do not use advertising trackers in
-          the application.
+          additional information. Password recovery uses an expiring, single-use
+          link sent to the account email through our configured mail service. A
+          successful reset signs out existing sessions. Email verification on
+          signup is not available yet. We use an essential session cookie to
+          keep you signed in. Access controls separate candidate and company
+          data. The production service uses HTTPS. We do not use advertising
+          trackers in the application.
         </p>
         <h2>Responsible use</h2>
         <p>
@@ -2960,6 +3124,14 @@ function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/signup" element={<AuthPage signup />} />
+        <Route
+          path="/forgot-password"
+          element={<PasswordRecovery key="forgot" />}
+        />
+        <Route
+          path="/reset-password"
+          element={<PasswordRecovery key="reset" reset />}
+        />
         <Route path="/methodology" element={<Methodology />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/app/*" element={<Workspace />} />

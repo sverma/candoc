@@ -4,6 +4,8 @@ Self-hosted reverse hiring marketplace. FastAPI + SQLAlchemy backend, React/Vite
 
 ## Models and API
 - `POST /api/auth/register` `{email,password,name,role:"candidate"|"company",company_name?}` returns `{user}`; `POST /api/auth/login` `{email,password}` returns `{user}`; `POST /api/auth/logout`; `GET /api/auth/me` `{user:null|{id,email,name,role,company_name}}`.
+- `POST /api/auth/forgot-password` `{email}` returns generic `202 {detail}` with configured mail delivery, `503` uniformly if unconfigured. No account disclosure or reset token in the API response.
+- `POST /api/auth/reset-password` `{token,password}` consumes a single-use 20-minute token and revokes all sessions; returns `200 {detail}` without signing in. Invalid, expired or replayed tokens return `400`.
 - `GET /api/stats` `{candidates,companies,introductions}` actual counts.
 - `GET /api/candidates?search=&skill=&location=&min_score=&sort=recent|score` returns `{candidates:[profile]}`. Authenticated company discovery; unauthenticated returns `{candidates:[]}`. `GET /api/candidates/{id}` returns `{candidate:profile}` authorized published profiles. Candidate profile contains `id,user_id,name,headline,location,bio,skills:[],years_experience,availability,github_url,linkedin_url,visible,assessment:null|assessment,created_at`. No private contact information except accepted introductions.
 - `GET /api/profile` `{profile}` candidate own; `PUT /api/profile` editable profile fields (headline, location, bio, skills array, years_experience, availability, github_url, linkedin_url, linkedin_text, visible, consent_public_analysis). Name from user.

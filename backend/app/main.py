@@ -1,4 +1,6 @@
 import datetime as dt
+import hmac
+import logging
 import os
 import re
 import secrets
@@ -7,16 +9,16 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import String, func, or_, select, text
+from sqlalchemy import String, delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session, selectinload
 
 from .database import Base, SessionLocal, engine, get_db
-from .models import AuthSession, Introduction, Profile, User, now
+from .models import AuthSession, Introduction, PasswordReset, Profile, User, now
 from .resumes import MAX_UPLOAD, extract_resume
 from .security import COOKIE_NAME, COOKIE_SECURE, SESSION_DAYS, check_password, hash_password, rate_limit, token_hash
 
@@ -86,7 +88,7 @@ class Register(StrictModel):
     @field_validator('email')
     @classmethod
     def valid_email(cls, value):
-        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
+        if not re.fullmatch(r'[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+', value):
             raise ValueError('Enter a valid email address.')
         return value.casefold()
 
@@ -94,6 +96,22 @@ class Register(StrictModel):
 class Login(StrictModel):
     email: str = Field(max_length=254)
     password: str = Field(max_length=128)
+
+
+class ForgotPassword(StrictModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator('email')
+    @classmethod
+    def valid_email(cls, value):
+        if not re.fullmatch(r'[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+', value):
+            raise ValueError('Enter a valid email address.')
+        return value.casefold()
+
+
+class ResetPassword(StrictModel):
+    token: str = Field(min_length=20, max_length=128, pattern=r'^[A-Za-z0-9_-]+$')
+    password: str = Field(min_length=12, max_length=128)
 
 
 class ProfileUpdate(StrictModel):
@@ -266,7 +284,9 @@ def register(payload: Register, request: Request, response: Response, db: Sessio
 @app.post('/api/auth/login')
 def login(payload: Login, request: Request, response: Response, db: Session = Depends(get_db)):
     rate_limit(request, 'login', 20, 900)
-    user = db.scalar(select(User).where(User.email == payload.email.casefold()))
+    # Serialize password verification/session creation with password reset, which
+    # locks the same user before changing credentials and revoking sessions.
+    user = db.scalar(select(User).where(User.email == payload.email.casefold()).with_for_update())
     if not user or not check_password(payload.password, user.password_hash):
         # Match password-hash work for nonexistent users to reduce enumeration.
         if not user:
@@ -286,6 +306,88 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
             db.commit()
     response.delete_cookie(COOKIE_NAME, path='/', secure=COOKIE_SECURE, httponly=True, samesite='lax')
     return {'ok': True}
+
+
+def deliver_password_reset(user_id, recipient, hashed, raw_token):
+    from . import mailer
+    if not user_id:
+        return
+    with SessionLocal() as delivery_db:
+        # A newer request or account deletion may invalidate a queued message.
+        active = delivery_db.scalar(select(PasswordReset.token_hash).where(PasswordReset.token_hash == hashed,
+                                                                         PasswordReset.expires_at > now()))
+    if not active:
+        return
+    try:
+        mailer.send_password_reset(recipient, APP_URL + '/reset-password#token=' + raw_token)
+    except Exception:
+        # Neither addresses, reset tokens, provider error text nor credentials
+        # belong in logs. The response is generic regardless of delivery outcome.
+        logging.getLogger(__name__).warning('Password reset email delivery failed.')
+        with SessionLocal() as cleanup_db:
+            cleanup_db.execute(delete(PasswordReset).where(PasswordReset.token_hash == hashed))
+            cleanup_db.commit()
+
+
+@app.post('/api/auth/forgot-password', status_code=202)
+def forgot_password(payload: ForgotPassword, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    from . import mailer
+    rate_limit(request, 'password-reset-ip', 10, 3600)
+    rate_limit(request, 'password-reset-email', 3, 3600, token_hash(payload.email))
+    if not mailer.is_configured():
+        raise HTTPException(503, 'Password recovery email is not configured. Please contact the site operator.')
+    raw_token = secrets.token_urlsafe(32)
+    hashed = token_hash(raw_token)
+    # Lock order is user first, then reset rows, matching reset_password().
+    user = db.scalar(select(User).where(User.email == payload.email).with_for_update())
+    if user:
+        db.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+        db.add(PasswordReset(token_hash=hashed, user_id=user.id,
+                             password_fingerprint=token_hash(user.password_hash),
+                             expires_at=now() + dt.timedelta(minutes=20)))
+    db.execute(delete(PasswordReset).where(PasswordReset.expires_at < now()))
+    # SMTP runs after commit: network latency never holds database row locks.
+    db.commit()
+    background_tasks.add_task(deliver_password_reset, user.id if user else None, payload.email, hashed, raw_token)
+    return {'detail': "If an account matches this email, we'll attempt to send a password reset link."}
+
+
+@app.post('/api/auth/reset-password')
+def reset_password(payload: ResetPassword, request: Request, response: Response, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    rate_limit(request, 'password-reset-submit', 10, 900)
+    hashed = token_hash(payload.token)
+    reset = db.get(PasswordReset, hashed)
+    invalid = 'This password reset link is invalid or expired. Request a new link.'
+    if not reset:
+        raise HTTPException(400, invalid)
+    user = db.scalar(select(User).where(User.id == reset.user_id).with_for_update())
+    if not user or not hmac.compare_digest(reset.password_fingerprint, token_hash(user.password_hash)):
+        db.rollback()
+        raise HTTPException(400, invalid)
+    # Conditional DELETE is the single-use gate. Under concurrent submissions,
+    # only one transaction can consume the row, including on SQLite.
+    consumed = db.execute(delete(PasswordReset).where(PasswordReset.token_hash == hashed,
+                                                    PasswordReset.expires_at > now())
+                          .execution_options(synchronize_session=False)
+                          .returning(PasswordReset.user_id)).scalar_one_or_none()
+    if not consumed:
+        db.rollback()
+        raise HTTPException(400, invalid)
+    user.password_hash = hash_password(payload.password)
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+    db.commit()
+    response.delete_cookie(COOKIE_NAME, path='/', secure=COOKIE_SECURE, httponly=True, samesite='lax')
+    background_tasks.add_task(deliver_password_changed, user.email)
+    return {'detail': 'Password updated. Sign in with your new password.'}
+
+
+def deliver_password_changed(recipient):
+    from . import mailer
+    try:
+        mailer.send_password_changed(recipient)
+    except Exception:
+        logging.getLogger(__name__).warning('Password change notification delivery failed.')
 
 
 @app.get('/api/auth/me')

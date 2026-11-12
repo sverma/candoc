@@ -9,6 +9,7 @@ Candidates upload their own resume, review a transparent **1–5 document eviden
 ## Included
 
 - Candidate and company signup/login with Argon2id password hashes, revocable cookie sessions, origin checks and request limits.
+- Password recovery via expiring, single-use email links. A successful reset revokes every session; reset tokens are stored only as hashes.
 - PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
 - Five weighted evidence criteria with traceable excerpts and improvement suggestions.
 - Optional public GitHub API enrichment: repository descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
@@ -69,7 +70,15 @@ Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the
 
 OpenAI requests use `store: false`; this is not a guarantee of zero provider retention. Consult your provider's current data policies and account controls. The adapter strips recognized contact/demographic metadata, but this is not exhaustive anonymization. Candidates must review their documents and assessment before making their profile visible.
 
-LinkedIn integration uses pasted/exported candidate text rather than an API whose access has not been approved. Companies are self-registered and their identities are not verified. Email verification, email delivery/password recovery, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+LinkedIn integration uses pasted/exported candidate text rather than an API whose access has not been approved. Companies are self-registered and their identities are not verified. Email verification, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+
+## Password recovery email
+
+The login page links to `/forgot-password`. A candidate or company submits its account email, receives a link, chooses and confirms a new password, then logs in normally. Links expire after 20 minutes, work once, and are superseded by a newer request. A successful reset revokes all sessions and all outstanding links. Tokens appear in URL fragments, so they are not included in normal HTTP request/access logs. The reset page removes the fragment after loading; reopen the email if you refresh before finishing.
+
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` (`ssl` or `starttls`), `SMTP_FROM`, and, where required, paired `SMTP_USERNAME`/`SMTP_PASSWORD` in the server-only `.env`, then recreate the API. TLS certificate verification is required. Use an authorized sender; possession of an unrelated application's credentials is not permission to reuse them.
+
+If mail is unconfigured, the endpoint gives the same unavailable response for every address. When configured, requests receive an identical acceptance message whether an account exists. Unknown accounts receive no email. Known-account delivery is attempted in the background; transport failures discard the token and log a generic operational warning. Acceptance is not proof of inbox delivery. Delivery tasks are process-local best effort and are not a durable queue; request a new link after a restart or transport outage. Per-address/IP request limits and submission limits restrict abuse.
 
 ## Operations, backup and restore
 

@@ -33,6 +33,14 @@ class AuthSession(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class PasswordReset(Base):
+    __tablename__ = 'password_resets'
+    token_hash = Column(String(64), primary_key=True)
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    password_fingerprint = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class Profile(Base):
     __tablename__ = 'profiles'
     id = Column(String(36), primary_key=True, default=uid)

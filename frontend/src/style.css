@@ -5219,3 +5219,60 @@ button {
     transition: none !important;
   }
 }
+
+.recovery-link {
+  text-align: right;
+  margin: -5px 0 22px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.recovery-link a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.recovery-page {
+  min-height: 100vh;
+  padding: 42px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  background: var(--warm);
+}
+.recovery-card {
+  width: min(100%, 470px);
+  padding: 34px;
+}
+.recovery-card h1 {
+  font-size: 30px;
+  line-height: 1.2;
+  margin: 16px 0;
+  letter-spacing: -1px;
+}
+.recovery-card > p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0 0 22px;
+}
+.recovery-card > .back-link,
+.recovery-card > .text-link {
+  margin-top: 24px;
+}
+.recovery-card form .text-link {
+  display: block;
+  margin-top: 20px;
+}
+.recovery-page > p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 480px) {
+  .recovery-page {
+    padding: 28px 16px;
+  }
+  .recovery-card {
+    padding: 24px;
+  }
+}
