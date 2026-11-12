@@ -147,6 +147,26 @@ def test_drafts_closed_roles_and_tenant_isolation(parties):
     assert company.patch('/api/hiring/jobs/' + draft['id'], json={'status': 'published'}).status_code == 409
 
 
+@pytest.mark.parametrize('initial_status', ['draft', 'paused'])
+def test_invitation_requires_explicit_publication_then_explicit_send(parties, initial_status):
+    candidate, company, stranger, rival, users = parties
+    profile = candidate.put('/api/profile', json={'visible': True, 'headline': 'Platform engineer'}).json()['profile']
+    role = job(company, status=initial_status)
+    invitation = {'candidate_id': profile['id'], 'message': 'Please consider our platform engineering opportunity.'}
+    endpoint = '/api/hiring/jobs/' + role['id']
+    assert company.post(endpoint + '/invite', json=invitation).status_code == 409
+    assert candidate.get('/api/hiring/applications').json()['applications'] == []
+    assert company.patch(endpoint, json={'status': 'published'}).status_code == 200
+    # Publishing alone never contacts a candidate or creates an invitation.
+    assert candidate.get('/api/hiring/applications').json()['applications'] == []
+    assert candidate.get('/api/hiring/notifications').json()['unread_count'] == 0
+    response = company.post(endpoint + '/invite', json=invitation)
+    assert response.status_code == 201, response.text
+    assert response.json()['application']['stage'] == 'invited'
+    assert candidate.get('/api/hiring/notifications').json()['unread_count'] == 1
+    assert company.post(endpoint + '/invite', json=invitation).status_code == 409
+
+
 @pytest.mark.parametrize('engagement', ['permanent', 'contract', 'freelance', 'consulting', 'temporary', 'internship', 'apprenticeship', 'volunteer'])
 def test_all_engagement_types_and_structured_filters(parties, engagement):
     candidate, company, stranger, rival, users = parties

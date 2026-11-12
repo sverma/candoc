@@ -1,5 +1,13 @@
 # Release verification
 
+## Role invitation fix — 12 November 2026
+
+Expanded draft and paused roles previously rendered a silently disabled **Invite a candidate** button. It now opens a dialog that explains publication, links unverified accounts to email verification, and provides an explicit publication step before candidate selection. Publishing never sends an invitation by itself. Closed roles retain a visible explanation. Candidate searches show loading and empty/error states, clear old selections and prevent sending to a candidate left over from an earlier search.
+
+- All 25 hiring tests passed, including two regressions for draft/paused publication followed by a separate explicit invitation. The production frontend build passed locally and on the server.
+- A live browser test reproduced the original disabled button, then verified draft guidance, the verification link, publication, candidate selection, clearing a stale search selection, invitation submission and the resulting conversation. The disposable candidate received the invitation and its in-app notification; the browser reported no console errors/warnings.
+- All test records were deleted. The existing draft role was preserved. Only the frontend container was rebuilt; API/database behavior and existing publication permissions were preserved.
+
 ## Hiring platform expansion — 12 November 2026
 
 Version 2 adds eight engagement types, searchable roles and saved roles, company profiles, candidate work/mobility preferences, reverse invitations and direct applications, a participant-only conversation/pipeline, interviews with RSVP, offers, in-app notifications and email-control verification. Existing accounts, assessments and introductions are preserved; all new storage is additive.

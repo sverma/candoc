@@ -868,12 +868,24 @@ export function JobDetail({ api, user }) {
                 <>
                   <button
                     className="button dark full"
-                    disabled={job.status !== "published"}
+                    disabled={busy || job.status === "closed"}
+                    aria-describedby={
+                      job.status !== "published"
+                        ? "role-invitation-help"
+                        : undefined
+                    }
                     onClick={() => setInvite(true)}
                   >
                     <Users size={16} />
                     Invite a candidate
                   </button>
+                  {job.status !== "published" && (
+                    <p id="role-invitation-help" className="small-muted">
+                      {job.status === "closed"
+                        ? "This role is closed. Create a new role to send invitations."
+                        : "Publish this role before inviting candidates. The invitation dialog will guide you."}
+                    </p>
+                  )}
                   <Link
                     className="button outline full"
                     to={`/app/applications?job_id=${id}`}
@@ -983,6 +995,10 @@ export function JobDetail({ api, user }) {
         <InviteDialog
           api={api}
           job={job}
+          user={user}
+          onPublished={(publishedJob) =>
+            resource.setData({ job: publishedJob })
+          }
           close={() => setInvite(false)}
           done={(item) => navigate("/app/applications/" + item.id)}
         />
@@ -1065,15 +1081,23 @@ function ApplyDialog({ api, job, user, close, done }) {
     </Dialog>
   );
 }
-function InviteDialog({ api, job, close, done }) {
+function InviteDialog({ api, job, user, onPublished, close, done }) {
   const [search, setSearch] = useState(""),
     [candidates, setCandidates] = useState([]),
     [candidate, setCandidate] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
+    [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const ready = job.status === "published";
+  const selectedCandidate = candidates.some((item) => item.id === candidate);
   useEffect(() => {
+    if (!ready) return;
     let active = true;
+    setLoading(true);
+    setCandidates([]);
+    setCandidate("");
+    setError("");
     const timeout = setTimeout(
       () =>
         api("/candidates?search=" + encodeURIComponent(search))
@@ -1082,6 +1106,9 @@ function InviteDialog({ api, job, close, done }) {
           })
           .catch((e) => {
             if (active) setError(e.message);
+          })
+          .finally(() => {
+            if (active) setLoading(false);
           }),
       250,
     );
@@ -1089,9 +1116,25 @@ function InviteDialog({ api, job, close, done }) {
       active = false;
       clearTimeout(timeout);
     };
-  }, [search, api]);
+  }, [search, api, ready, job.id]);
+  async function publish() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/hiring/jobs/" + job.id, {
+        method: "PATCH",
+        body: { status: "published" },
+      });
+      onPublished(result.job);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit(e) {
     e.preventDefault();
+    if (!ready || loading || !selectedCandidate || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -1112,56 +1155,121 @@ function InviteDialog({ api, job, close, done }) {
         A personal invitation to {job.title}. The candidate decides whether to
         start a conversation.
       </p>
-      <form onSubmit={submit}>
-        <ErrorNotice error={error} />
-        <Field
-          label="Find a discoverable candidate"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Name, skill, or role"
-        />
-        <Select
-          label="Candidate"
-          value={candidate}
-          onChange={(e) => setCandidate(e.target.value)}
-          required
-          options={[
-            { value: "", label: "Choose a candidate" },
-            ...candidates.map((c) => ({
-              value: c.id,
-              label: `${c.name} · ${c.headline || "Professional profile"}`,
-            })),
-          ]}
-        />
-        {!candidates.length && (
+      <ErrorNotice error={error} />
+      {!ready ? (
+        <div>
           <p className="small-muted">
-            No discoverable profiles match. Try a broader search.
+            This role is {label(job.status).toLowerCase()}. Publish it first so
+            candidates can review the work and terms before responding.
+            Publishing makes the role public; it does not send an invitation.
           </p>
-        )}
-        <Textarea
-          label="Your invitation"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          required
-          minLength={20}
-          maxLength={5000}
-          rows={5}
-          placeholder="What stood out about their work? Why this role?"
-        />
-        <div className="modal-actions">
-          <button type="button" className="button outline" onClick={close}>
-            Cancel
-          </button>
-          <button className="button dark" disabled={busy || !candidate}>
-            {busy ? (
-              <LoaderCircle className="spin" size={16} />
+          {!user.email_verified && (
+            <p className="small-muted">
+              Verify your company account email in Account &amp; privacy before
+              publishing. Then return here to continue.
+            </p>
+          )}
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="button outline"
+              onClick={close}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            {job.status === "closed" ? (
+              <Link className="button dark" to="/app/jobs/new">
+                Create a new role
+              </Link>
+            ) : !user.email_verified ? (
+              <Link className="button dark" to="/app/settings">
+                Verify your email
+              </Link>
             ) : (
-              <Send size={16} />
+              <button
+                type="button"
+                className="button dark"
+                onClick={publish}
+                disabled={busy}
+              >
+                {busy && <LoaderCircle className="spin" size={16} />}
+                Publish role
+              </button>
             )}
-            Send invitation
-          </button>
+          </div>
         </div>
-      </form>
+      ) : (
+        <form onSubmit={submit}>
+          <Field
+            label="Find a discoverable candidate"
+            autoFocus
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCandidate("");
+            }}
+            placeholder="Name, skill, or role"
+          />
+          <Select
+            label="Candidate"
+            value={candidate}
+            onChange={(e) => setCandidate(e.target.value)}
+            disabled={loading || busy}
+            required
+            options={[
+              { value: "", label: "Choose a candidate" },
+              ...candidates.map((c) => ({
+                value: c.id,
+                label: `${c.name} · ${c.headline || "Professional profile"}`,
+              })),
+            ]}
+          />
+          {loading ? (
+            <p className="small-muted" role="status">
+              Loading discoverable candidates…
+            </p>
+          ) : (
+            !error &&
+            !candidates.length && (
+              <p className="small-muted">
+                No discoverable profiles match. Try a broader search.
+              </p>
+            )
+          )}
+          <Textarea
+            label="Your invitation"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            required
+            minLength={20}
+            maxLength={5000}
+            rows={5}
+            placeholder="What stood out about their work? Why this role?"
+          />
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="button outline"
+              onClick={close}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              className="button dark"
+              disabled={busy || loading || !selectedCandidate}
+            >
+              {busy ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+              Send invitation
+            </button>
+          </div>
+        </form>
+      )}
     </Dialog>
   );
 }
@@ -2452,7 +2560,7 @@ export function ApplicationDetail({ api, user }) {
             dialog.type === "accept_invitation"
               ? "Start this conversation?"
               : dialog.type === "offer_response"
-                ? `${({ accepted: "Accept", declined: "Decline", withdrawn: "Withdraw" })[dialog.status] || "Respond to"} this offer?`
+                ? `${{ accepted: "Accept", declined: "Decline", withdrawn: "Withdraw" }[dialog.status] || "Respond to"} this offer?`
                 : dialog.type === "stage"
                   ? `Move this application to ${label(dialog.stage).toLowerCase()}?`
                   : dialog.type === "cancel_interview"
