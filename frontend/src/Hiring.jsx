@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import {
   MapPin,
   MessageSquare,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -293,11 +294,12 @@ function useResource(api, path) {
   // Route identity is checked during render, before the fetching effect runs.
   // Same-resource refreshes may retain data; another record can never borrow it.
   const current = resource.path === path;
+  const reload = useCallback(() => setRevision((n) => n + 1), []);
   return {
     data: current ? resource.data : null,
     error: current ? resource.error : "",
     loading: !current || resource.loading,
-    reload: () => setRevision((n) => n + 1),
+    reload,
     setData: (data) => setResource((previous) => ({ ...previous, path, data })),
   };
 }
@@ -2937,6 +2939,19 @@ export function NotificationsPage({ api }) {
   const resource = useResource(api, "/hiring/notifications"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState("");
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") resource.reload();
+    };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [resource.reload]);
   async function mark(id) {
     setBusy(id || "all");
     setError("");
@@ -2959,8 +2974,16 @@ export function NotificationsPage({ api }) {
     <div className="hiring-page">
       <Header
         title="Stay close to what’s next."
-        description="Application updates, interview invitations, and new conversations, in Candoc."
+        description="Introductions, application updates, interview invitations, and new conversations, in Candoc."
       >
+        <button
+          className="button outline"
+          onClick={resource.reload}
+          disabled={resource.loading}
+        >
+          <RefreshCw size={16} className={resource.loading ? "spin" : ""} />
+          Refresh
+        </button>
         <button
           className="button outline"
           onClick={() => mark()}
@@ -2988,7 +3011,18 @@ export function NotificationsPage({ api }) {
                 <p>{item.body}</p>
                 <small>{when(item.created_at)}</small>
                 <div>
-                  {item.application_id ? (
+                  {item.introduction_id ? (
+                    <Link
+                      className="text-link"
+                      to={
+                        "/app/inbox?introduction_id=" +
+                        encodeURIComponent(item.introduction_id)
+                      }
+                    >
+                      Open introduction
+                      <ArrowRight size={13} />
+                    </Link>
+                  ) : item.application_id ? (
                     <Link
                       className="text-link"
                       to={"/app/applications/" + item.application_id}

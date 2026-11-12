@@ -1,5 +1,14 @@
 # Release verification
 
+## Introduction Updates integration — 12 November 2026
+
+Original introductions were saved correctly but did not emit events into the newer hiring Updates feed. Introduction requests now create a sender receipt and recipient update; accept/decline responses create participant updates in the same transaction. The combined feed, unread controls, dashboard and export include both workflows. Source-linked introduction events cascade-delete with their introduction. The Updates screen offers Refresh, refreshes on focus and every 30 seconds while visible, and links to the exact participant-scoped introduction.
+
+- 296 backend tests passed, including nine new tests covering request/response events, tenant isolation, read state, historical backfill, ordering/limits, export, deletion and concurrent responses. The frontend built locally and in the Linux deployment container.
+- A private backup completed before the additive table was created. The idempotent backfill restored two sent/received entries for the reported existing introduction, kept its original timestamp and pending status, and did not resend it or send email. Historical response times are not invented.
+- Public HTTPS/PostgreSQL regression checks verified send/receive updates, recipient isolation, read controls, dashboard counts, repeated-event idempotence, concurrent acceptance (one success, one rejection), export and cascade deletion. Browser review verified the received update, Refresh, marking it read, and its direct introduction link, with no observed console warnings/errors.
+- All disposable API/browser fixtures were deleted; the actual introduction and its restored updates remain intact.
+
 ## Role invitation fix — 12 November 2026
 
 Expanded draft and paused roles previously rendered a silently disabled **Invite a candidate** button. It now opens a dialog that explains publication, links unverified accounts to email verification, and provides an explicit publication step before candidate selection. Publishing never sends an invitation by itself. Closed roles retain a visible explanation. Candidate searches show loading and empty/error states, clear old selections and prevent sending to a candidate left over from an earlier search.

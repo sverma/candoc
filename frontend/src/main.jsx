@@ -3011,6 +3011,10 @@ function IntroModal({ candidate, close, onSuccess }) {
 
 function Inbox() {
   const { user } = useAuth();
+  const { search } = useLocation();
+  const selectedIntroduction = new URLSearchParams(search).get(
+    "introduction_id",
+  );
   const company = user.role === "company";
   const [items, setItems] = useState(null);
   const [error, setError] = useState("");
@@ -3018,10 +3022,25 @@ function Inbox() {
   const [busy, setBusy] = useState(null);
   const [confirm, setConfirm] = useState(null);
   useEffect(() => {
-    api("/introductions")
-      .then((d) => setItems(d.introductions))
-      .catch((e) => setError(e.message));
-  }, []);
+    let active = true;
+    setItems(null);
+    setError("");
+    api(
+      "/introductions" +
+        (selectedIntroduction
+          ? "?introduction_id=" + encodeURIComponent(selectedIntroduction)
+          : ""),
+    )
+      .then((d) => {
+        if (active) setItems(d.introductions);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedIntroduction]);
   async function update(id, status) {
     setBusy(id);
     setError("");
@@ -3042,7 +3061,11 @@ function Inbox() {
       setBusy(null);
     }
   }
-  const visible = items?.filter((i) => filter === "all" || i.status === filter);
+  const visible = items?.filter(
+    (i) =>
+      (filter === "all" || i.status === filter) &&
+      (!selectedIntroduction || i.id === selectedIntroduction),
+  );
   return (
     <>
       <PageHeader
@@ -3059,6 +3082,11 @@ function Inbox() {
         }
       />
       <Alert error={error} />
+      {selectedIntroduction && (
+        <Link className="back-link" to="/app/inbox">
+          <ArrowLeft size={15} /> All introductions
+        </Link>
+      )}
       <div className="tabs">
         {["all", "pending", "accepted", "declined"].map((status) => (
           <button
@@ -3168,25 +3196,29 @@ function Inbox() {
           <Empty
             icon={Mail}
             title={
-              filter === "all"
-                ? company
-                  ? "A thoughtful hello can open a door."
-                  : "Your next hello is on its way."
-                : `No ${filter} introductions.`
+              selectedIntroduction
+                ? "This introduction is unavailable in this view."
+                : filter === "all"
+                  ? company
+                    ? "A thoughtful hello can open a door."
+                    : "Your next hello is on its way."
+                  : `No ${filter} introductions.`
             }
             action={
-              company && filter === "all" ? (
+              company && filter === "all" && !selectedIntroduction ? (
                 <Link to="/app/talent" className="button dark">
                   Discover talent <ArrowRight size={17} />
                 </Link>
               ) : null
             }
           >
-            {filter === "all"
-              ? company
-                ? "Find someone whose work stands out and send a personal introduction. Every conversation starts somewhere."
-                : "Publish your profile so companies can discover your work. When an introduction arrives, you’ll find it here."
-              : "Introductions with this status will appear here."}
+            {selectedIntroduction
+              ? "Choose All introductions to see your current introductions and their status."
+              : filter === "all"
+                ? company
+                  ? "Find someone whose work stands out and send a personal introduction. Every conversation starts somewhere."
+                  : "Publish your profile so companies can discover your work. When an introduction arrives, you’ll find it here."
+                : "Introductions with this status will appear here."}
           </Empty>
         </div>
       )}

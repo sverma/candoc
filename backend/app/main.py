@@ -14,7 +14,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Quer
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import String, delete, func, or_, select, text
+from sqlalchemy import String, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session, object_session, selectinload
 
@@ -23,6 +23,7 @@ from .models import AuthSession, GitLabConnection, Introduction, LinkedInImport,
 from .resumes import MAX_UPLOAD, extract_resume
 from .security import COOKIE_NAME, COOKIE_SECURE, SESSION_DAYS, check_password, hash_password, rate_limit, token_hash
 from .verification_models import EmailVerification
+from .introduction_updates import record_introduction_sent, record_introduction_response
 
 APP_URL = os.getenv('APP_URL', 'http://localhost:5173').rstrip('/')
 ALLOWED_ORIGINS = {APP_URL, *(value.strip().rstrip('/') for value in os.getenv('ALLOWED_ORIGINS', '').split(',') if value.strip())}
@@ -649,6 +650,8 @@ def request_introduction(payload: IntroductionCreate, request: Request, user: Us
         raise HTTPException(409, 'You already have a pending introduction request to this candidate.')
     item = Introduction(company_user_id=user.id, **payload.model_dump())
     db.add(item)
+    db.flush()
+    record_introduction_sent(db, item)
     db.commit()
     return {'introduction': introduction_json(item, user)}
 
@@ -663,18 +666,29 @@ def introduction_query(user):
 
 
 @app.get('/api/introductions')
-def introductions(user: User = Depends(require_user), db: Session = Depends(get_db)):
-    return {'introductions': [introduction_json(item, user) for item in db.scalars(introduction_query(user).limit(500)).all()]}
+def introductions(introduction_id: str = Query('', max_length=36), user: User = Depends(require_user), db: Session = Depends(get_db)):
+    query = introduction_query(user)
+    if introduction_id:
+        query = query.where(Introduction.id == introduction_id)
+    return {'introductions': [introduction_json(item, user) for item in db.scalars(query.limit(500)).all()]}
 
 
 @app.patch('/api/introductions/{introduction_id}')
 def decide_introduction(introduction_id: str, payload: IntroductionUpdate, user: User = Depends(candidate_user), db: Session = Depends(get_db)):
-    item = db.get(Introduction, introduction_id)
-    if not item or item.candidate_id != user.profile.id:
+    item = db.scalar(select(Introduction).where(Introduction.id == introduction_id,
+                                              Introduction.candidate_id == user.profile.id).with_for_update())
+    if not item:
         raise HTTPException(404, 'Introduction was not found.')
     if item.status != 'pending':
         raise HTTPException(409, 'This introduction has already been answered.')
-    item.status = payload.status
+    changed = db.execute(update(Introduction).where(Introduction.id == item.id, Introduction.status == 'pending')
+                         .values(status=payload.status).execution_options(synchronize_session=False)
+                         .returning(Introduction.id)).scalar_one_or_none()
+    if not changed:
+        db.rollback()
+        raise HTTPException(409, 'This introduction has already been answered.')
+    db.refresh(item)
+    record_introduction_response(db, item)
     db.commit()
     return {'introduction': introduction_json(item, user)}
 

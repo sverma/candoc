@@ -15,7 +15,7 @@ Self-hosted reverse hiring marketplace. FastAPI + SQLAlchemy backend, React/Vite
 - `GET /api/rubric` `{version,description,dimensions:[{key,label,weight,description}],limitations:[]}`.
 - Assessment `{score:1..5,confidence:"low"|"medium"|"high",summary,dimensions:[{key,label,score,weight,evidence:[],improvements:[]}],strengths:[],improvements:[],sources:[{type,status,url?,detail}],analyzed_at,version}`. Five dimensions: skills_evidence .25, experience_detail .25, impact .20, project_depth .20, clarity .10. Bound scores anchored 1..5. Ignore protected traits, pedigree/prestige, gaps, followers/stars, lack of profiles. Evidence snippets auditable. No claims of verified employment; no unexplained LLM judgments.
 - `POST /api/introductions` company `{candidate_id,role_title,message,salary_range?,work_mode?}` returns `{introduction}`.
-- `GET /api/introductions` `{introductions:[]}` own incoming/outgoing. Introduction `{id,candidate_id,candidate_name,company_name,role_title,message,salary_range,work_mode,status:"pending"|"accepted"|"declined",created_at,contact_email?}`. Only accepted shares candidate email with sender.
+- `GET /api/introductions?introduction_id=` `{introductions:[]}` own incoming/outgoing, optionally scoped to one introduction for an Updates link. The optional ID never grants access to another account's introduction. Introduction `{id,candidate_id,candidate_name,company_name,role_title,message,salary_range,work_mode,status:"pending"|"accepted"|"declined",created_at,contact_email?}`. Only accepted shares candidate email with sender.
 - `PATCH /api/introductions/{id}` candidate `{status:"accepted"|"declined"}`.
 - `DELETE /api/account` current user deletion cascade & invalidate sessions.
 - `GET /api/account/export` own JSON export.
@@ -42,7 +42,7 @@ See [hiring contract](HIRING-CONTRACT.md) for field definitions, enums and permi
 | Messages | Participant `POST /applications/{id}/messages` `{body}`; retained history with no messaging after rejection, withdrawal or decline. |
 | Interviews | Company `POST /applications/{id}/interviews`; participant `PATCH /interviews/{id}`. Company controls schedule/status, candidate controls RSVP. Rescheduling resets RSVP. Explicit timezone offsets required. |
 | Offers | Company `POST /applications/{id}/offers`; participant `PATCH /offers/{id}` `{status:accepted|declined|withdrawn}`. Only candidates accept/decline; only companies withdraw. Expiry and prior responses are enforced. |
-| Notifications | `GET /notifications`, `PATCH /notifications/{id}` `{read:true}`, `POST /notifications/read-all`; own recipient only. |
+| Notifications | `GET /notifications`, `PATCH /notifications/{id}` `{read:true}`, `POST /notifications/read-all`; own recipient only. Merges introduction and hiring events chronologically (latest 200), with a full unread count. Event targets include nullable `introduction_id`, `application_id` and `job_id`; introduction links open the participant-scoped inbox. |
 | Dashboard | `GET /dashboard`: actual counts, stage totals, upcoming interviews and recent applications. |
 
 `POST /api/auth/request-verification` sends the signed-in user's own email a verification link and returns `202`; `POST /api/auth/verify-email` `{token}` consumes it, without signing in. `user.email_verified` is included in auth/export responses. Tokens are never exposed in API responses.

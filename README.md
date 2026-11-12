@@ -16,7 +16,7 @@ Candidates upload their own resume, review a transparent **1–5 document eviden
 - Candidate preferences for engagement types, preferred countries/regions, availability, notice, hours, compensation, languages and timezone. Optional nationality and country/region authorization declarations have independent sharing controls; permit notes always stay private.
 - Company profiles, draft/published/paused/closed role lifecycle, saved roles, direct applications and company invitations. A private candidate can explicitly share a professional profile with an application without publishing it in discovery.
 - Participant-only hiring conversations, interview scheduling/rescheduling with timezone-aware timestamps and candidate RSVP, expiring offers with candidate accept/decline, and explicit company hiring confirmation after an accepted offer.
-- Live pipeline/dashboard counts, upcoming interviews, in-app notifications, full account export and cascade deletion of linked hiring records.
+- Live pipeline/dashboard counts, upcoming interviews, and a shared Updates feed for introductions and hiring events. Introduction send/receive and accept/decline events reach their participants, with unread controls and direct links. Updates refresh every 30 seconds while visible, on focus, or using Refresh. Full account export and cascade deletion include these events.
 - PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
 - Five weighted evidence criteria with traceable excerpts and improvement suggestions.
 - Optional public GitHub and GitLab.com API enrichment: repository/project descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
@@ -116,6 +116,8 @@ If mail is unconfigured, the endpoint gives the same unavailable response for ev
 ## Operations, backup and restore
 
 Docker restart policies restore services after host restart. `docker compose logs --tail=100 api` shows operational errors without provider keys. Health checks cover API/database availability. Host TLS certificates renew through certbot; nginx must reload following renewal.
+
+When upgrading from a release that did not connect introductions to Updates, run `docker compose exec -T api python - < deploy/backfill_introduction_updates.py` after the new API is healthy. This idempotent repair creates missing sent/received entries at the original introduction timestamps, preserves existing read states, and never resends introductions/emails or changes their status. Historical response times were not recorded, so the repair does not invent acceptance/decline timestamps; opening the introduction shows its current status.
 
 Install `deploy/candoc-backup.service` and `.timer` under `/etc/systemd/system/`, then enable `candoc-backup.timer`. Backups run at approximately **08:45 India time** daily, retain seven days locally, and are root-only in `/var/backups/candock`. They include sensitive data. Deleted accounts can remain in these retained backups for up to seven days; do not silently restore deleted accounts. Off-server backup replication is not configured.
 

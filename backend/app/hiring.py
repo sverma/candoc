@@ -6,6 +6,7 @@ from sqlalchemy import String, and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from .models import Profile, User, now
 from .hiring_models import Application, CompanyProfile, Interview, Job, Message, Notification, Offer, SavedJob
+from .introduction_updates import IntroductionNotification
 from . import hiring_schemas as S
 
 TERMINAL = {'hired', 'rejected', 'withdrawn', 'declined'}
@@ -96,7 +97,24 @@ def offer_json(item):
 
 
 def notification_json(item):
-    return {**{key: getattr(item, key) for key in ['id', 'kind', 'body', 'application_id', 'job_id', 'read']}, 'created_at': iso(item.created_at)}
+    return {**{key: getattr(item, key) for key in ['id', 'kind', 'body', 'read']},
+            'application_id': getattr(item, 'application_id', None), 'job_id': getattr(item, 'job_id', None),
+            'introduction_id': getattr(item, 'introduction_id', None), 'created_at': iso(item.created_at)}
+
+
+def notification_items(user_id, db, limit=None):
+    rows = []
+    for model in [Notification, IntroductionNotification]:
+        query = select(model).where(model.recipient_id == user_id).order_by(model.created_at.desc(), model.id.desc())
+        rows.extend(db.scalars(query.limit(limit) if limit is not None else query).all())
+    rows.sort(key=lambda item: (utc(item.created_at), item.id), reverse=True)
+    return rows[:limit] if limit is not None else rows
+
+
+def unread_notifications(user_id, db):
+    return sum(db.scalar(select(func.count()).select_from(model).where(
+        model.recipient_id == user_id, model.read.is_(False)))
+        for model in [Notification, IntroductionNotification])
 
 
 def notify(db, recipient, kind, body, application=None, job=None):
@@ -150,7 +168,7 @@ def export_hiring(user, db):
               'messages': [message_json(item, db) for item in db.scalars(select(Message).where(Message.application_id.in_(ids))).all()],
               'interviews': [interview_json(item) for item in db.scalars(select(Interview).where(Interview.application_id.in_(ids))).all()],
               'offers': [offer_json(item) for item in db.scalars(select(Offer).where(Offer.application_id.in_(ids))).all()],
-              'notifications': [notification_json(item) for item in db.scalars(select(Notification).where(Notification.recipient_id == user.id)).all()],
+              'notifications': [notification_json(item) for item in notification_items(user.id, db)],
               'saved_jobs': [item.job_id for item in db.scalars(select(SavedJob).where(SavedJob.user_id == user.id)).all()]}
     if user.role == 'company':
         result['company'] = company_json(user, db)
@@ -517,13 +535,15 @@ def build_router():
 
     @router.get('/notifications')
     def get_notifications(user=Depends(require_user), db=Depends(get_db)):
-        rows = db.scalars(select(Notification).where(Notification.recipient_id == user.id).order_by(Notification.created_at.desc()).limit(200)).all()
-        count = db.scalar(select(func.count()).select_from(Notification).where(Notification.recipient_id == user.id, Notification.read.is_(False)))
-        return {'notifications': [notification_json(item) for item in rows], 'unread_count': count}
+        return {'notifications': [notification_json(item) for item in notification_items(user.id, db, 200)],
+                'unread_count': unread_notifications(user.id, db)}
 
     @router.patch('/notifications/{notification_id}')
     def read_notification(notification_id: str, payload: S.NotificationRead, user=Depends(require_user), db=Depends(get_db)):
         item = db.scalar(select(Notification).where(Notification.id == notification_id, Notification.recipient_id == user.id))
+        if not item:
+            item = db.scalar(select(IntroductionNotification).where(IntroductionNotification.id == notification_id,
+                                                                  IntroductionNotification.recipient_id == user.id))
         if not item:
             raise HTTPException(404, 'Notification was not found.')
         item.read = True
@@ -532,7 +552,8 @@ def build_router():
 
     @router.post('/notifications/read-all')
     def read_all_notifications(user=Depends(require_user), db=Depends(get_db)):
-        db.query(Notification).filter(Notification.recipient_id == user.id, Notification.read.is_(False)).update({'read': True}, synchronize_session=False)
+        for model in [Notification, IntroductionNotification]:
+            db.query(model).filter(model.recipient_id == user.id, model.read.is_(False)).update({'read': True}, synchronize_session=False)
         db.commit()
         return {'ok': True}
 
@@ -546,7 +567,7 @@ def build_router():
         interviews = db.scalars(upcoming_query.order_by(Interview.starts_at).limit(20)).all()
         job_count = db.scalar(select(func.count()).select_from(Job).where(Job.company_id == user.id)) if user.role == 'company' else 0
         published = db.scalar(select(func.count()).select_from(Job).where(Job.company_id == user.id, Job.status == 'published')) if user.role == 'company' else 0
-        unread = db.scalar(select(func.count()).select_from(Notification).where(Notification.recipient_id == user.id, Notification.read.is_(False)))
+        unread = unread_notifications(user.id, db)
         saved = db.scalar(select(func.count()).select_from(SavedJob).where(SavedJob.user_id == user.id))
         return {'role': user.role, 'counts': {'jobs': job_count, 'published_jobs': published, 'applications': len(applications),
                  'unread_notifications': unread, 'saved_jobs': saved, 'upcoming_interviews': upcoming_count},
