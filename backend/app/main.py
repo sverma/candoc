@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session, object_session, selectinload
 
 from .database import Base, SessionLocal, engine, get_db
-from .models import AuthSession, Introduction, LinkedInImport, PasswordReset, Profile, User, now
+from .models import AuthSession, GitLabConnection, Introduction, LinkedInImport, PasswordReset, Profile, User, now
 from .resumes import MAX_UPLOAD, extract_resume
 from .security import COOKIE_NAME, COOKIE_SECURE, SESSION_DAYS, check_password, hash_password, rate_limit, token_hash
 
@@ -123,10 +123,12 @@ class ProfileUpdate(StrictModel):
     years_experience: Optional[float] = Field(default=None, ge=0, le=80)
     availability: Optional[str] = Field(default=None, max_length=100)
     github_url: Optional[str] = Field(default=None, max_length=250)
+    gitlab_url: Optional[str] = Field(default=None, max_length=250)
     linkedin_url: Optional[str] = Field(default=None, max_length=350)
     linkedin_text: Optional[str] = Field(default=None, max_length=50000)
     visible: Optional[bool] = None
     consent_public_analysis: Optional[bool] = None
+    consent_gitlab_analysis: Optional[bool] = None
     consent_external_ai: Optional[bool] = None
 
     @field_validator('skills')
@@ -160,6 +162,17 @@ class ProfileUpdate(StrictModel):
             raise ValueError('Use an HTTPS LinkedIn /in/ profile URL without tracking parameters.')
         return value
 
+    @field_validator('gitlab_url')
+    @classmethod
+    def valid_gitlab(cls, value):
+        if not value:
+            return value
+        from .gitlab import canonical_gitlab_url
+        canonical = canonical_gitlab_url(value)
+        if not canonical:
+            raise ValueError('Use a GitLab.com personal profile URL, such as https://gitlab.com/username.')
+        return canonical
+
 
 class IntroductionCreate(StrictModel):
     candidate_id: str = Field(max_length=36)
@@ -192,6 +205,8 @@ def redact_contact(value):
 def profile_json(profile, private=False):
     data = {key: getattr(profile, key) for key in ['id', 'user_id', 'headline', 'location', 'bio', 'skills', 'years_experience', 'availability', 'github_url', 'linkedin_url', 'visible', 'assessment']}
     data.update(name=profile.user.name, created_at=profile.created_at.isoformat())
+    gitlab_url, gitlab_consent = gitlab_connection_values(profile)
+    data['gitlab_url'] = gitlab_url
     if not private and data['assessment']:
         data['assessment'] = redact_contact(data['assessment'])
     if private:
@@ -200,6 +215,7 @@ def profile_json(profile, private=False):
                     resume_filename=profile.resume_filename, has_resume=bool(profile.resume_text), resume_text=profile.resume_text,
                     updated_at=profile.updated_at.isoformat())
         data['linkedin_import'] = linkedin_import_result(profile)
+        data['consent_gitlab_analysis'] = gitlab_consent
     return data
 
 
@@ -212,11 +228,21 @@ def linkedin_import_result(profile):
     return item.result if item else None
 
 
+def gitlab_connection_values(profile):
+    db = object_session(profile)
+    if not db:
+        return '', False
+    item = db.scalar(select(GitLabConnection).where(GitLabConnection.profile_id == profile.id)
+                     .execution_options(populate_existing=True))
+    return (item.url, item.consent) if item else ('', False)
+
+
 def source_revision(profile):
     imported = linkedin_import_result(profile)
     return (profile.resume_text, tuple(profile.skills or []), profile.linkedin_text,
             profile.github_url, profile.linkedin_url,
             profile.consent_public_analysis, profile.consent_external_ai,
+            gitlab_connection_values(profile),
             # Uploaded source changes have no Profile column migration. Include
             # a freshly read document fingerprint in the analysis revision.
             token_hash(json.dumps(imported, sort_keys=True)) if imported else None)
@@ -424,16 +450,31 @@ def get_profile(user: User = Depends(candidate_user)):
 
 @app.put('/api/profile')
 def update_profile(payload: ProfileUpdate, user: User = Depends(candidate_user), db: Session = Depends(get_db)):
-    profile = user.profile
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.id).with_for_update()
+                        .execution_options(populate_existing=True))
+    if not profile:
+        raise HTTPException(409, 'Your profile was removed during this update.')
     changes = payload.model_dump(exclude_unset=True)
     # Null is intentionally rejected for concrete profile fields.
     if any(value is None for value in changes.values()):
         raise HTTPException(422, 'Profile fields cannot be null. Use an empty value to clear a field.')
+    gitlab_fields = {key: changes.pop(key) for key in ['gitlab_url', 'consent_gitlab_analysis'] if key in changes}
+    gitlab_changed = False
+    if gitlab_fields:
+        previous_url, previous_consent = gitlab_connection_values(profile)
+        updated_url = gitlab_fields.get('gitlab_url', previous_url)
+        updated_consent = gitlab_fields.get('consent_gitlab_analysis', previous_consent)
+        gitlab_changed = (updated_url, updated_consent) != (previous_url, previous_consent)
+        item = db.get(GitLabConnection, profile.id)
+        if item:
+            item.url, item.consent = updated_url, updated_consent
+        elif gitlab_changed:
+            db.add(GitLabConnection(profile_id=profile.id, url=updated_url, consent=updated_consent))
     invalidates = {'skills', 'linkedin_text', 'github_url', 'linkedin_url', 'consent_public_analysis', 'consent_external_ai'}
     changed_sources = any(key in invalidates and getattr(profile, key) != value for key, value in changes.items())
     for key, value in changes.items():
         setattr(profile, key, value)
-    if changed_sources:
+    if changed_sources or gitlab_changed:
         profile.assessment = None
     db.commit()
     return {'profile': profile_json(profile, True)}
@@ -470,6 +511,7 @@ async def upload_resume(request: Request, file: UploadFile = File(...), user: Us
 async def analyze(request: Request, user: User = Depends(candidate_user), db: Session = Depends(get_db)):
     from .evaluation import evaluate_profile
     from .sources import fetch_github_profile
+    from .gitlab import fetch_gitlab_profile
     from .semantic import enhance_assessment
     rate_limit(request, 'analyze', 10, 3600, user.id)
     profile = user.profile
@@ -482,9 +524,14 @@ async def analyze(request: Request, user: User = Depends(candidate_user), db: Se
     # A source request may yield long enough for another tab to revoke consent or
     # delete/edit the profile. Recheck before sending excerpts to an AI provider.
     check_analysis_revision(db, profile, revision)
+    gitlab = None
+    gitlab_url, gitlab_consent = gitlab_connection_values(profile)
+    if gitlab_url and gitlab_consent:
+        gitlab = await fetch_gitlab_profile(gitlab_url)
+    check_analysis_revision(db, profile, revision)
     imported = linkedin_import_result(profile)
-    assessment = evaluate_profile(profile.resume_text, profile.skills or [], linkedin_text=profile.linkedin_text or '', github_data=github, linkedin_data=imported)
-    assessment = await enhance_assessment(assessment, profile.resume_text, linkedin_text=profile.linkedin_text or '', github_data=github, consent=profile.consent_external_ai, linkedin_data=imported)
+    assessment = evaluate_profile(profile.resume_text, profile.skills or [], linkedin_text=profile.linkedin_text or '', github_data=github, linkedin_data=imported, gitlab_data=gitlab)
+    assessment = await enhance_assessment(assessment, profile.resume_text, linkedin_text=profile.linkedin_text or '', github_data=github, consent=profile.consent_external_ai, linkedin_data=imported, gitlab_data=gitlab)
     check_analysis_revision(db, profile, revision)
     profile.assessment = assessment
     db.commit()

@@ -1,6 +1,6 @@
 # Candoc
 
-**Companies apply to people.** An open-source reverse hiring marketplace with private candidate profiles, resume evidence review, public GitHub observations, and consent-based introductions.
+**Companies apply to people.** An open-source reverse hiring marketplace with private candidate profiles, resume evidence review, public GitHub/GitLab observations, and consent-based introductions.
 
 Live application: [candoc.org](https://candoc.org) · Source: [sverma/candoc](https://github.com/sverma/candoc)
 
@@ -12,7 +12,7 @@ Candidates upload their own resume, review a transparent **1–5 document eviden
 - Password recovery via expiring, single-use email links. A successful reset revokes every session; reset tokens are stored only as hashes.
 - PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
 - Five weighted evidence criteria with traceable excerpts and improvement suggestions.
-- Optional public GitHub API enrichment: repository descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
+- Optional public GitHub and GitLab.com API enrichment: repository/project descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
 - Candidate-uploaded LinkedIn profile PDF, TXT, professional CSV, or data-export ZIP, with extracted text review, replacement and removal. Pasted LinkedIn text remains supported. Profile URLs are references; no automated LinkedIn scraping.
 - Optional, separately consented OpenAI semantic commentary with source-checked quotations. The API key stays on the server. No key is included in this repository.
 - Candidate search, introduction inbox, accept/decline, account export and permanent live-account deletion.
@@ -20,9 +20,9 @@ Candidates upload their own resume, review a transparent **1–5 document eviden
 
 ## Assessment boundaries
 
-The numeric score describes evidence in a document; it is not a person's quality, verified proficiency, employability, or suitability for a role. It is deterministic and does not change when GitHub is missing or unavailable. AI commentary adds context and questions; it never silently changes the numeric score. Human review is required for employment decisions.
+The numeric score describes evidence in a document; it is not a person's quality, verified proficiency, employability, or suitability for a role. It is deterministic and does not change when GitHub or GitLab is missing or unavailable. AI commentary adds context and questions; it never silently changes the numeric score. Human review is required for employment decisions.
 
-The initial rubric is English-language and heuristic. Keyword coverage, document formatting, extraction and writing style can affect results. It has not been validated as a predictor of job performance. Resume/LinkedIn statements and GitHub authorship are not independently verified. Scanned PDFs require OCR before upload. See [evaluation details](docs/EVALUATION.md).
+The initial rubric is English-language and heuristic. Keyword coverage, document formatting, extraction and writing style can affect results. It has not been validated as a predictor of job performance. Resume/LinkedIn statements and GitHub/GitLab authorship are not independently verified. Scanned PDFs require OCR before upload. See [evaluation details](docs/EVALUATION.md).
 
 ## Local development
 
@@ -66,11 +66,17 @@ Do not run `docker compose config` into shared logs: the resolved configuration 
 
 ## AI configuration and privacy
 
-Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the API: `docker compose up -d --force-recreate api`. The default model is `gpt-6-luna`, configurable without a source change. Provider model access and rates depend on your account. Requests have bounded input/output and timeouts; provider failure leaves the rubric result usable. A separate profile checkbox explicitly authorizes sending document excerpts to OpenAI. Without permission no AI request is made; public GitHub permission is separate.
+Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the API: `docker compose up -d --force-recreate api`. The default model is `gpt-6-luna`, configurable without a source change. Provider model access and rates depend on your account. Requests have bounded input/output and timeouts; provider failure leaves the rubric result usable. A separate profile checkbox explicitly authorizes sending document excerpts to OpenAI. Without permission no AI request is made; public GitHub and GitLab permissions are separate from AI consent and from each other.
 
 OpenAI requests use `store: false`; this is not a guarantee of zero provider retention. Consult your provider's current data policies and account controls. The adapter strips recognized contact/demographic metadata, but this is not exhaustive anonymization. Candidates must review their documents and assessment before making their profile visible.
 
 LinkedIn integration uses files and text supplied by the candidate. The app extracts only allowlisted professional fields from supported ZIP CSV files, discards the original upload, and retains the extracted text and import metadata privately. It never fetches the LinkedIn profile URL. Companies are self-registered and their identities are not verified. Email verification, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+
+## GitLab.com profiles
+
+Candidates can add `https://gitlab.com/username` under **My profile → Work beyond your resume** and enable **GitLab public analysis**. The GitHub checkbox does not authorize GitLab access. Run an assessment to read up to ten recently active public projects in the supplied user's personal namespace; README excerpts and languages are inspected for up to three original projects. Private/internal projects, forks, group contributions, and self-managed GitLab hosts are outside this integration. Account ownership and authorship are not verified.
+
+The integration uses fixed GitLab.com REST API endpoints without credentials, does not clone or execute code, and reports inaccessible/rate-limited sources honestly. Source observations are supplementary: popularity and account availability do not change the deterministic score. Sending relevant excerpts to OpenAI still requires the separate AI checkbox. Removing the URL or changing permissions invalidates the prior assessment. Existing profiles default to an empty GitLab URL and no GitLab permission; an additive connection table preserves existing profile data.
 
 ## LinkedIn export import
 

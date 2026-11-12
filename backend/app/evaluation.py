@@ -20,7 +20,7 @@ LIMITATIONS = [
     "This deterministic English-language rubric measures how much evidence a document supplies, not candidate quality, job fit or hiring suitability.",
     "An evidence score must never automatically accept, reject or rank a person for a hiring decision. A human must review relevant work and candidate corrections.",
     "Resume and supplied LinkedIn text are self-reported. Employment, metrics, account ownership and repository authorship are not verified.",
-    "Public GitHub observations are supplementary and do not affect the score. LinkedIn exports are candidate-supplied documents. Missing, private or unavailable social accounts do not lower the score.",
+    "Public GitHub and GitLab observations are supplementary and do not affect the score. LinkedIn exports are candidate-supplied documents. Missing, private or unavailable social accounts do not lower the score.",
     "Protected characteristics, names, contact details, age, tenure, career gaps, school or employer prestige, stars and followers are not rubric inputs.",
     "Rules can miss synonyms, non-English content and complex careers. PDF extraction, document formatting and writing style can affect coverage. Scores are not validated predictors of job performance.",
 ]
@@ -90,7 +90,8 @@ def _sample(lines: List[str], maximum: int = 3) -> List[str]:
 
 def evaluate_profile(resume_text: str, skills: List[str], linkedin_text: str = "",
                      github_data: Optional[Dict[str, Any]] = None,
-                     linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                     linkedin_data: Optional[Dict[str, Any]] = None,
+                     gitlab_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Assess self-supplied document evidence; external profile availability cannot alter score."""
     resume_lines = _clean_lines(resume_text or "")
     supplied_lines = _clean_lines(linkedin_text or "")
@@ -160,6 +161,21 @@ def evaluate_profile(resume_text: str, skills: List[str], linkedin_text: str = "
     else:
         sources.append({"type": "github", "status": "not_connected",
                         "detail": "Optional public profile analysis was not requested. This does not lower the score."})
+    if gitlab_data:
+        status = gitlab_data.get("status", "unavailable")
+        gitlab_source = {"type": "gitlab", "status": status,
+                         "detail": str(gitlab_data.get("detail", "GitLab public observations are supplementary and do not affect the score."))[:1200]}
+        if gitlab_data.get("url"):
+            gitlab_source["url"] = str(gitlab_data["url"])[:300]
+        observations = gitlab_data.get("evidence", [])
+        if status == "available" and isinstance(observations, list):
+            gitlab_source["evidence"] = [str(item)[:700] for item in observations[:3]]
+            gitlab_source["repositories"] = [{key: str(repo.get(key, ""))[:700] for key in ("name", "description", "url", "language")}
+                                               for repo in gitlab_data.get("repositories", [])[:10] if isinstance(repo, dict)]
+        sources.append(gitlab_source)
+    else:
+        sources.append({"type": "gitlab", "status": "not_connected",
+                        "detail": "Optional GitLab public analysis was not requested. This does not lower the score."})
     return {"score": overall, "confidence": confidence,
             "summary": "Your document supplies " + ("substantial" if overall >= 4 else "some" if overall >= 2.5 else "limited") + " work evidence under the published rubric. This is a document evidence score, not a measure of talent or hiring suitability. Confidence describes rule coverage, not whether claims are true.",
             "dimensions": dimensions, "strengths": strengths,

@@ -4,7 +4,7 @@ Deployed on 12 November 2026 to the requested server, with an isolated Compose p
 
 ## Evidence collected
 
-- 129 backend/evaluation/provider/parser/recovery/export tests passed on the patched dependency set.
+- 216 backend/evaluation/provider/parser/recovery/export/GitLab tests passed on the patched dependency set.
 - Python dependency audit reported no known vulnerabilities for the selected requirements; npm installation audit also reported none.
 - Production frontend built successfully in the server's Linux container.
 - A live HTTPS workflow verified candidate/company signup, resume upload, assessment, discoverability, introduction, acceptance, private contact release, JSON export and account deletion.

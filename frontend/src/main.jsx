@@ -30,6 +30,7 @@ import {
   MapPin,
   BriefcaseBusiness,
   Github,
+  Gitlab,
   Linkedin,
   ShieldCheck,
   Sparkles,
@@ -92,6 +93,13 @@ async function api(path, options = {}) {
         : data.detail?.[0]?.msg || "Something went wrong. Please try again.",
     );
   return data;
+}
+function isPublicSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.port &&
+      ["github.com", "gitlab.com", "linkedin.com", "www.linkedin.com"].includes(url.hostname.toLowerCase());
+  } catch { return false; }
 }
 const initials = (name) =>
   (name || "You")
@@ -508,7 +516,7 @@ function Landing() {
             <p>
               Your age, gender, university prestige, career breaks, and social
               following don’t belong in that equation. Neither does having a
-              GitHub account.
+              GitHub or GitLab account.
             </p>
             <Link to="/methodology" className="text-link">
               See how evaluation works <ArrowRight size={17} />
@@ -1270,10 +1278,12 @@ function ProfileEditor() {
       years_experience: p.years_experience || 0,
       availability: p.availability || "Open to opportunities",
       github_url: p.github_url || "",
+      gitlab_url: p.gitlab_url || "",
       linkedin_url: p.linkedin_url || "",
       linkedin_text: p.linkedin_text || "",
       visible: !!p.visible,
       consent_public_analysis: !!p.consent_public_analysis,
+      consent_gitlab_analysis: !!p.consent_gitlab_analysis,
       consent_external_ai: !!p.consent_external_ai,
     });
   }
@@ -1565,6 +1575,16 @@ function ProfileEditor() {
                   hint="We can review your public repositories and README content. A GitHub account is never required for a strong score."
                 />
                 <Field
+                  label="GitLab.com profile"
+                  name="gitlab_url"
+                  type="url"
+                  value={form.gitlab_url}
+                  onChange={change}
+                  placeholder="https://gitlab.com/your.username"
+                  maxLength={250}
+                  hint="Optional GitLab.com personal profile. With your permission, we can read public personal projects, README content, and languages. Having an account does not affect your evidence score."
+                />
+                <Field
                   label="LinkedIn profile"
                   name="linkedin_url"
                   type="url"
@@ -1609,6 +1629,23 @@ function ProfileEditor() {
                     </small>
                   </span>
                 </label>
+                <label className="checkbox-row platform-consent">
+                  <input
+                    type="checkbox"
+                    name="consent_gitlab_analysis"
+                    checked={form.consent_gitlab_analysis}
+                    onChange={change}
+                  />
+                  <span>
+                    I allow Candoc to read public GitLab.com data from the profile
+                    I’ve provided when I run an assessment.
+                    <small>
+                      Optional and separate from GitHub permission. You can
+                      withdraw this permission at any time. Public account data
+                      does not independently verify authorship or employment.
+                    </small>
+                  </span>
+                </label>
                 <label className="checkbox-row ai-consent">
                   <input
                     type="checkbox"
@@ -1618,7 +1655,7 @@ function ProfileEditor() {
                   />
                   <span>
                     I allow Candoc to send relevant resume, pasted or uploaded LinkedIn,
-                    and public GitHub excerpts to OpenAI for a deeper
+                    and public GitHub and GitLab excerpts to OpenAI for a deeper
                     qualitative review.
                     <small>
                       Optional. The five-part evidence score works without this.
@@ -1903,6 +1940,8 @@ function AssessmentReport({ assessment, name, compact = false }) {
               <span className="source-icon">
                 {source.type?.toLowerCase().includes("github") ? (
                   <Github size={19} />
+                ) : source.type?.toLowerCase().includes("gitlab") ? (
+                  <Gitlab size={19} />
                 ) : source.type?.toLowerCase().includes("linkedin") ? (
                   <Linkedin size={19} />
                 ) : (
@@ -1910,12 +1949,9 @@ function AssessmentReport({ assessment, name, compact = false }) {
                 )}
               </span>
               <div>
-                <b>{source.type?.includes("linkedin") ? (source.type === "linkedin_export" ? "LinkedIn export · Candidate provided" : "LinkedIn content · Candidate provided") : source.type?.replaceAll("_", " ")}</b>
+                <b>{source.type?.includes("linkedin") ? (source.type === "linkedin_export" ? "LinkedIn export · Candidate provided" : "LinkedIn content · Candidate provided") : source.type === "gitlab" ? "GitLab public work" : source.type?.replaceAll("_", " ")}</b>
                 <p>{source.detail}</p>
-                {source.url &&
-                  /^https:\/\/(github\.com|www\.linkedin\.com|linkedin\.com)\//.test(
-                    source.url,
-                  ) && (
+                {source.url && isPublicSourceUrl(source.url) && (
                     <a href={source.url} target="_blank" rel="noreferrer">
                       View source <ExternalLink size={11} />
                     </a>
@@ -2382,6 +2418,11 @@ function TalentDetail() {
                 aria-label="GitHub profile"
               >
                 <Github size={19} />
+              </a>
+            )}
+            {profile.gitlab_url && isPublicSourceUrl(profile.gitlab_url) && (
+              <a href={profile.gitlab_url} target="_blank" rel="noreferrer" aria-label="GitLab profile" title="GitLab.com profile">
+                <Gitlab size={19} />
               </a>
             )}
             {profile.linkedin_url && (
@@ -2985,14 +3026,17 @@ function Methodology() {
         <p>
           Protected characteristics, name, age, gender, photographs, university
           or employer prestige, career gaps, and social popularity are excluded.
-          Missing GitHub or LinkedIn content does not reduce the score. GitHub
-          stars and follower counts do not measure professional ability.
+          Missing GitHub, GitLab, or LinkedIn content does not reduce the score.
+          Stars, followers, and other popularity counts do not measure professional ability.
         </p>
         <h2>Sources, consent, and limits</h2>
         <p>
           Resume text is extracted from the document you upload. When you opt
-          in, we can review public GitHub repositories and README content from
-          your provided profile. LinkedIn context comes from a profile export
+          in separately for each service, we can review public GitHub repositories
+          or GitLab.com personal projects, README content, and languages from
+          your provided profiles. These optional sources add context and do not
+          change the numeric evidence score. Linked accounts do not independently
+          verify authorship or employment. LinkedIn context comes from a profile export
           you upload or content you paste yourself. Candoc does not fetch or
           scrape LinkedIn pages. PDF, TXT, CSV, and supported professional CSV
           sections in data export ZIPs can be imported. Extracted professional
@@ -3062,7 +3106,7 @@ function Privacy() {
           hashed password. Candidate accounts may include a resume, extracted
           resume text, professional profile, candidate-supplied LinkedIn
           content, extracted professional text from a LinkedIn export you upload,
-          public GitHub evidence if requested, and assessment results.
+          public GitHub and GitLab evidence if separately requested, and assessment results.
           We also store introductions and their status.
         </p>
         <h2>Private until you choose otherwise</h2>
@@ -3089,8 +3133,12 @@ function Privacy() {
         </p>
         <h2>Connected professional profiles</h2>
         <p>
-          GitHub enrichment requires your permission and reads only public
-          information from the username you supply. You can withdraw permission
+          GitHub and GitLab.com enrichment each require their own permission
+          and read only public information from the personal profiles you supply.
+          GitLab support includes public personal projects, README content, and
+          languages on GitLab.com. Account availability does not affect your
+          evidence score, and linked work does not independently verify
+          authorship or employment. You can withdraw either permission
           in your profile settings and rerun your assessment. LinkedIn profile
           URLs are reference links only and are not fetched or scraped. You can
           upload your own LinkedIn profile PDF, TXT, CSV, or data export ZIP, or
@@ -3102,7 +3150,7 @@ function Privacy() {
           Pasted LinkedIn content stays separate. These are candidate-provided
           statements and do not independently verify employment.
           If you separately opt in to deeper AI review, relevant resume,
-          pasted or uploaded LinkedIn, and public GitHub excerpts are transmitted to OpenAI to
+          pasted or uploaded LinkedIn, and public GitHub and GitLab excerpts are transmitted to OpenAI to
           produce supplementary qualitative commentary. This is optional; the
           evidence score does not require it. Automated filtering limits direct
           contact details before transmission, but you should remove

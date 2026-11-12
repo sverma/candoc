@@ -65,6 +65,7 @@ class Profile(Base):
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     user = relationship('User', back_populates='profile')
     linkedin_imports = relationship('LinkedInImport', cascade='all, delete-orphan', passive_deletes=True)
+    gitlab_connection = relationship('GitLabConnection', uselist=False, cascade='all, delete-orphan', passive_deletes=True)
 
 
 class LinkedInImport(Base):
@@ -72,6 +73,13 @@ class LinkedInImport(Base):
     profile_id = Column(String(36), ForeignKey('profiles.id', ondelete='CASCADE'), primary_key=True)
     result = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now, nullable=False)
+
+
+class GitLabConnection(Base):
+    __tablename__ = 'gitlab_connections'
+    profile_id = Column(String(36), ForeignKey('profiles.id', ondelete='CASCADE'), primary_key=True)
+    url = Column(String(250), default='', nullable=False)
+    consent = Column(Boolean, default=False, nullable=False)
 
 
 class Introduction(Base):

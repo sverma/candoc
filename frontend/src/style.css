@@ -5297,6 +5297,7 @@ button {
 .linkedin-export-filename svg { flex-shrink: 0; }
 .linkedin-export-sections { margin-top: 13px; }
 .linkedin-export-sections > span { font-size: 8px; }
+.checkbox-row.platform-consent { margin-top: 20px; }
 .recovery-page > p {
   display: flex;
   align-items: center;

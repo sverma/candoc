@@ -41,7 +41,7 @@ a concise interpretation explaining the stated contribution, implementation choi
 between skills and work, or what additional context would make that statement clearer.
 Only discuss what the quoted text actually supports. Attribute claims as described/stated, not verified.
 Resume and candidate-provided LinkedIn text/exports are self-reported and not verified
-by LinkedIn. GitHub README/repository metadata cannot prove account
+by LinkedIn. GitHub and GitLab README/repository metadata cannot prove account
 ownership, authorship, code quality or employment; never attribute a team's work to a person.
 Do not assess, score, rank, recommend hiring, reject or infer candidate suitability, personality,
 competence, intelligence, truthfulness, protected characteristics, age or socioeconomic background.
@@ -65,7 +65,8 @@ def _source_text(text: str, limit: int) -> str:
 
 
 def _sources(resume_text: str, linkedin_text: str, github_data: Optional[Dict[str, Any]],
-             linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+             linkedin_data: Optional[Dict[str, Any]] = None,
+             gitlab_data: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     result = {}
     resume = _source_text(resume_text, 28_000)
     if resume:
@@ -90,6 +91,17 @@ def _sources(resume_text: str, linkedin_text: str, github_data: Optional[Dict[st
                                 str(repo.get("readme_excerpt", "")), min(2500, remaining))
             if text:
                 result["github_repository_" + str(index + 1)] = text
+    if gitlab_data and gitlab_data.get("status") == "available":
+        for index, repo in enumerate(gitlab_data.get("repositories", [])[:3]):
+            if not isinstance(repo, dict):
+                continue
+            remaining = MAX_INPUT_CHARACTERS - sum(len(value) for value in result.values())
+            if remaining <= 0:
+                break
+            text = _source_text("Public GitLab project description\n" + str(repo.get("description", "")) + "\n" +
+                                str(repo.get("readme_excerpt", "")), min(2500, remaining))
+            if text:
+                result["gitlab_repository_" + str(index + 1)] = text
     return result
 
 
@@ -122,7 +134,8 @@ def _validated_review(raw: Any, sources: Dict[str, str]) -> Dict[str, Any]:
 async def enhance_assessment(assessment: Dict[str, Any], resume_text: str, linkedin_text: str = "",
                              github_data: Optional[Dict[str, Any]] = None,
                              consent: bool = False,
-                             linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                             linkedin_data: Optional[Dict[str, Any]] = None,
+                             gitlab_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return a copy with `semantic_review`; never mutate the score or original object."""
     result = copy.deepcopy(assessment)
     configuration = semantic_configuration()
@@ -139,7 +152,7 @@ async def enhance_assessment(assessment: Dict[str, Any], resume_text: str, linke
         result["semantic_review"] = {**base, "status": "not_configured",
                                      "detail": "AI review is not active: the operator has not configured an OpenAI API key. Your evidence score uses the published rules."}
         return result
-    excerpts = _sources(resume_text, linkedin_text, github_data, linkedin_data=linkedin_data)
+    excerpts = _sources(resume_text, linkedin_text, github_data, linkedin_data=linkedin_data, gitlab_data=gitlab_data)
     if not excerpts:
         result["semantic_review"] = {**base, "status": "unavailable", "detail": "No usable document text is available for AI review."}
         return result
