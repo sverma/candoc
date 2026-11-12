@@ -201,6 +201,7 @@ function Modal({ title, children, close, wide }) {
         <div className="modal-head">
           <h2>{title}</h2>
           <button
+            type="button"
             className="icon-button"
             onClick={close}
             aria-label="Close dialog"
@@ -1255,6 +1256,8 @@ function ProfileEditor() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState("");
+  const [linkedinError, setLinkedinError] = useState("");
+  const linkedinRequest = useRef(false);
   const navigate = useNavigate();
   const fileRef = useRef();
   function load(p) {
@@ -1350,6 +1353,49 @@ function ProfileEditor() {
       setError(e.message);
     } finally {
       setBusy("");
+    }
+  }
+  async function importLinkedin(file) {
+    if (linkedinRequest.current || busy || !file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setLinkedinError("Please choose a LinkedIn export smaller than 5 MB.");
+      return;
+    }
+    if (!/\.(pdf|txt|csv|zip)$/i.test(file.name)) {
+      setLinkedinError("Please upload a PDF, TXT, CSV, or ZIP file.");
+      return;
+    }
+    linkedinRequest.current = true;
+    setLinkedinError("");
+    setSuccess("");
+    setBusy("linkedin-import");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const result = await api("/profile/linkedin/import", { method: "POST", body });
+      setProfile(result.profile);
+      setSuccess("Your LinkedIn export has been imported. Review the extracted text below, save any profile changes, then run an assessment.");
+    } catch (e) {
+      setLinkedinError(e.message);
+    } finally {
+      setBusy("");
+      linkedinRequest.current = false;
+    }
+  }
+  async function removeLinkedin() {
+    if (linkedinRequest.current || busy) return;
+    linkedinRequest.current = true;
+    setLinkedinError("");
+    setBusy("linkedin-remove");
+    try {
+      const result = await api("/profile/linkedin/import", { method: "DELETE" });
+      setProfile(result.profile);
+      setSuccess("Uploaded LinkedIn content removed. You can upload another export at any time.");
+    } catch (e) {
+      setLinkedinError(e.message);
+    } finally {
+      setBusy("");
+      linkedinRequest.current = false;
     }
   }
   if (!form) return error ? <Alert error={error} /> : <Spinner />;
@@ -1526,16 +1572,26 @@ function ProfileEditor() {
                   onChange={change}
                   placeholder="https://www.linkedin.com/in/your-profile"
                   maxLength={350}
+                  disabled={!!busy}
+                  hint="Optional reference link only. Candoc does not fetch or scrape LinkedIn pages."
+                />
+                <LinkedinImportControl
+                  imported={profile.linkedin_import}
+                  aiConsent={form.consent_external_ai}
+                  busy={busy}
+                  error={linkedinError}
+                  onImport={importLinkedin}
+                  onRemove={removeLinkedin}
                 />
                 <Textarea
-                  label="LinkedIn experience or About section"
+                  label="Or paste your LinkedIn experience or About section"
                   name="linkedin_text"
                   value={form.linkedin_text}
                   onChange={change}
                   rows={5}
                   maxLength={30000}
                   placeholder="Paste the relevant content from your own LinkedIn profile…"
-                  hint="LinkedIn profile access is restricted. We analyze only the content you provide here; adding a URL doesn’t import your profile."
+                  hint="Pasted content stays separate from your uploaded export. Both are candidate-provided context. Missing LinkedIn content never lowers your evidence score."
                 />
                 <label className="checkbox-row">
                   <input
@@ -1548,8 +1604,8 @@ function ProfileEditor() {
                     I allow Candoc to read public GitHub data from the profile
                     I’ve provided when I run an assessment.
                     <small>
-                      You can withdraw this permission at any time. LinkedIn is
-                      never scraped.
+                      You can withdraw this permission at any time. LinkedIn
+                      content comes only from an export you upload or text you paste.
                     </small>
                   </span>
                 </label>
@@ -1561,7 +1617,7 @@ function ProfileEditor() {
                     onChange={change}
                   />
                   <span>
-                    I allow Candoc to send relevant resume, supplied LinkedIn,
+                    I allow Candoc to send relevant resume, pasted or uploaded LinkedIn,
                     and public GitHub excerpts to OpenAI for a deeper
                     qualitative review.
                     <small>
@@ -1640,6 +1696,30 @@ function ProfileEditor() {
         </div>
       </form>
     </>
+  );
+}
+
+function LinkedinImportControl({ imported, aiConsent, busy, error, onImport, onRemove }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const fileRef = useRef(null);
+  async function choose(event) {
+    const file = event.target.files?.[0];
+    if (file) await onImport(file);
+    event.target.value = "";
+  }
+  return (
+    <div className="linkedin-import">
+      <div className="linkedin-import-heading"><Linkedin size={18} /><h3>Upload your LinkedIn profile export</h3></div>
+      <p>Bring your LinkedIn experience into focus with a file you export yourself. Upload your profile PDF or a data export ZIP containing professional information such as Profile, Positions, Education, and Skills.</p>
+      <details className="linkedin-export-help"><summary>How to get your export</summary><ol><li><b>PDF (recommended):</b> On LinkedIn desktop, open Me → your profile → More or Resources → Save to PDF. This option is available for some members and English profiles; it is not available in the mobile app.</li><li><b>ZIP alternative:</b> Open Me → Settings &amp; Privacy → Data Privacy → How LinkedIn uses your data → Download your data. Select professional categories, then Request archive.</li><li>Upload the file here, review the extracted text, and run your Candoc assessment. Choose professional data only and keep the file under 5 MB.</li></ol><p>LinkedIn’s guides: <a href="https://www.linkedin.com/help/linkedin/answer/a541960" target="_blank" rel="noreferrer">Save profile as PDF <ExternalLink size={11} /></a> · <a href="https://www.linkedin.com/help/linkedin/answer/a1339364" target="_blank" rel="noreferrer">Download your data <ExternalLink size={11} /></a></p></details>
+      <input type="file" ref={fileRef} accept=".pdf,.txt,.csv,.zip" onChange={choose} hidden />
+      <Alert error={error} />
+      <button type="button" className="upload-zone linkedin-export-zone" onClick={() => fileRef.current?.click()} disabled={!!busy}>{busy === "linkedin-import" ? <LoaderCircle className="spin" size={27} /> : <UploadCloud size={28} />}<b>{busy === "linkedin-import" ? "Reading your export…" : imported ? "Replace your LinkedIn export" : "Choose your LinkedIn export"}</b><span>PDF, TXT, CSV or ZIP · Up to 5 MB</span><small>Only upload your own profile information.</small></button>
+      <p className="linkedin-export-privacy">We retain extracted professional text, not the original uploaded file. For ZIP exports, only supported professional CSV sections are read; connections, messages, and other personal files are ignored. Imported statements remain candidate-provided and are not independently verified.</p>
+      {imported && <div className="linkedin-import-result" role="status"><span className="badge green">Candidate-provided export</span>{imported.filename && <strong className="linkedin-export-filename"><FileText size={15} />{imported.filename}</strong>}{imported.imported_at && <small>Imported {formatDate(imported.imported_at)}</small>}<p>{imported.detail}</p>{imported.sections?.length > 0 && <div className="chips linkedin-export-sections">{imported.sections.map((section, i) => <span key={i}>{typeof section === "string" ? section : section?.name || section?.type || "Professional section"}</span>)}</div>}{imported.text && <label className="field"><span>Review extracted professional text</span><textarea value={imported.text} readOnly rows={7} aria-label="Uploaded LinkedIn export text, read only" /><small>Replace the file or remove the import if this content does not reflect what you want to share.</small></label>}<button type="button" className="button outline small" onClick={() => setConfirmRemove(true)} disabled={!!busy}><Trash2 size={14} />Remove uploaded content</button></div>}
+      <p className="linkedin-ai-note">{aiConsent ? "Your separate AI permission is on. Uploaded LinkedIn excerpts may be sent to OpenAI when you run an assessment." : "Uploading does not authorize OpenAI processing. That requires the separate AI checkbox below."}</p>
+      {confirmRemove && <Modal title="Remove uploaded LinkedIn content?" close={() => setConfirmRemove(false)}><p className="modal-description">This removes the extracted text from this upload and clears its assessment context. Your separately pasted LinkedIn content is kept. You can upload another file whenever you choose.</p><div className="modal-actions"><button type="button" className="button outline" onClick={() => setConfirmRemove(false)}>Keep content</button><button type="button" className="button danger" disabled={!!busy} onClick={async () => { await onRemove(); setConfirmRemove(false); }}>{busy === "linkedin-remove" ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}Remove content</button></div></Modal>}
+    </div>
   );
 }
 
@@ -1830,7 +1910,7 @@ function AssessmentReport({ assessment, name, compact = false }) {
                 )}
               </span>
               <div>
-                <b>{source.type?.replaceAll("_", " ")}</b>
+                <b>{source.type?.includes("linkedin") ? (source.type === "linkedin_export" ? "LinkedIn export · Candidate provided" : "LinkedIn content · Candidate provided") : source.type?.replaceAll("_", " ")}</b>
                 <p>{source.detail}</p>
                 {source.url &&
                   /^https:\/\/(github\.com|www\.linkedin\.com|linkedin\.com)\//.test(
@@ -2912,8 +2992,14 @@ function Methodology() {
         <p>
           Resume text is extracted from the document you upload. When you opt
           in, we can review public GitHub repositories and README content from
-          your provided profile. LinkedIn content must be supplied by you; a
-          profile URL alone does not grant access and is not scraped.
+          your provided profile. LinkedIn context comes from a profile export
+          you upload or content you paste yourself. Candoc does not fetch or
+          scrape LinkedIn pages. PDF, TXT, CSV, and supported professional CSV
+          sections in data export ZIPs can be imported. Extracted professional
+          text is retained; original upload files are discarded. ZIP connections,
+          messages, and other personal files are ignored. Uploaded or pasted
+          statements are candidate-provided context, not independent employment
+          verification.
         </p>
         <p>
           The numerical evidence assessment uses transparent text-based rules.
@@ -2975,7 +3061,8 @@ function Privacy() {
           Your account includes your name, email, account type, and a securely
           hashed password. Candidate accounts may include a resume, extracted
           resume text, professional profile, candidate-supplied LinkedIn
-          content, public GitHub evidence if requested, and assessment results.
+          content, extracted professional text from a LinkedIn export you upload,
+          public GitHub evidence if requested, and assessment results.
           We also store introductions and their status.
         </p>
         <h2>Private until you choose otherwise</h2>
@@ -3004,10 +3091,18 @@ function Privacy() {
         <p>
           GitHub enrichment requires your permission and reads only public
           information from the username you supply. You can withdraw permission
-          in your profile settings and rerun your assessment. LinkedIn is not
-          scraped; only the content you choose to provide is analyzed. If you
-          separately opt in to deeper AI review, relevant resume, supplied
-          LinkedIn, and public GitHub excerpts are transmitted to OpenAI to
+          in your profile settings and rerun your assessment. LinkedIn profile
+          URLs are reference links only and are not fetched or scraped. You can
+          upload your own LinkedIn profile PDF, TXT, CSV, or data export ZIP, or
+          paste relevant profile text. We retain extracted professional text,
+          not the original uploaded file. ZIP imports read only supported
+          professional CSV sections such as Profile, Positions, Education, and
+          Skills; connections, messages, and unrelated personal files are ignored.
+          You can review, replace, or remove your uploaded content at any time.
+          Pasted LinkedIn content stays separate. These are candidate-provided
+          statements and do not independently verify employment.
+          If you separately opt in to deeper AI review, relevant resume,
+          pasted or uploaded LinkedIn, and public GitHub excerpts are transmitted to OpenAI to
           produce supplementary qualitative commentary. This is optional; the
           evidence score does not require it. Automated filtering limits direct
           contact details before transmission, but you should remove

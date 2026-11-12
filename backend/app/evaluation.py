@@ -20,7 +20,7 @@ LIMITATIONS = [
     "This deterministic English-language rubric measures how much evidence a document supplies, not candidate quality, job fit or hiring suitability.",
     "An evidence score must never automatically accept, reject or rank a person for a hiring decision. A human must review relevant work and candidate corrections.",
     "Resume and supplied LinkedIn text are self-reported. Employment, metrics, account ownership and repository authorship are not verified.",
-    "Public GitHub observations are supplementary and do not affect the score. Missing, private or unavailable social accounts do not lower it.",
+    "Public GitHub observations are supplementary and do not affect the score. LinkedIn exports are candidate-supplied documents. Missing, private or unavailable social accounts do not lower the score.",
     "Protected characteristics, names, contact details, age, tenure, career gaps, school or employer prestige, stars and followers are not rubric inputs.",
     "Rules can miss synonyms, non-English content and complex careers. PDF extraction, document formatting and writing style can affect coverage. Scores are not validated predictors of job performance.",
 ]
@@ -72,6 +72,7 @@ def _clean_lines(text: str) -> List[str]:
         line = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "[contact removed]", line)
         line = re.sub(r"https?://\S+", "[link]", line)
         line = re.sub(r"(?<!\w)(?:\+\d{1,3}[ -]?)?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?!\w)", "[contact removed]", line)
+        line = re.sub(r"(?<!\w)\+?\d{10,15}(?!\w)|(?<!\w)(?:\+?\d{1,3}[ -]?)?\d{5}[ -]\d{5}(?!\w)", "[contact removed]", line)
         # Sentence separation supports resumes pasted as paragraphs without valuing length.
         for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", line):
             if sentence and sentence not in lines:
@@ -88,11 +89,13 @@ def _sample(lines: List[str], maximum: int = 3) -> List[str]:
 
 
 def evaluate_profile(resume_text: str, skills: List[str], linkedin_text: str = "",
-                     github_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                     github_data: Optional[Dict[str, Any]] = None,
+                     linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Assess self-supplied document evidence; external profile availability cannot alter score."""
     resume_lines = _clean_lines(resume_text or "")
     supplied_lines = _clean_lines(linkedin_text or "")
-    lines = list(dict.fromkeys(resume_lines + supplied_lines))
+    exported_lines = _clean_lines(str(linkedin_data.get("text", ""))) if (linkedin_data and linkedin_data.get("status") == "available" and linkedin_data.get("type") == "candidate_export") else []
+    lines = list(dict.fromkeys(resume_lines + supplied_lines + exported_lines))
     work = [line for line in lines if ACTION.search(line) and len(line.split()) >= 6]
     specific = [line for line in work if SCOPE.search(line)]
     outcomes = [line for line in specific if OUTCOME.search(line)]
@@ -133,7 +136,15 @@ def evaluate_profile(resume_text: str, skills: List[str], linkedin_text: str = "
     sources = [{"type": "resume", "status": "available" if resume_lines else "missing",
                 "detail": "Candidate-supplied document; statements and employment are unverified." if resume_lines else "No usable resume text supplied."},
                {"type": "linkedin", "status": "candidate_supplied" if supplied_lines else "not_provided",
-                "detail": "Candidate-supplied LinkedIn text; not fetched or verified by LinkedIn." if supplied_lines else "Optional. Provide your own LinkedIn export or text; Candoc does not scrape LinkedIn."}]
+                "detail": "Candidate-supplied LinkedIn text; not fetched or verified by LinkedIn." if supplied_lines else "Optional candidate-supplied LinkedIn export or pasted text. Candoc does not fetch LinkedIn profiles."}]
+    if linkedin_data and linkedin_data.get("type") == "candidate_export":
+        export_source = {"type": "linkedin_export", "status": str(linkedin_data.get("status", "unavailable"))[:40],
+                         "detail": "Candidate-provided LinkedIn export. Identity, employment and claims are self-reported and unverified.",
+                         "filename": str(linkedin_data.get("filename", ""))[:160],
+                         "imported_at": str(linkedin_data.get("imported_at", ""))[:60],
+                         "sections": [str(value)[:80] for value in linkedin_data.get("sections", [])[:20]],
+                         "evidence": _sample(exported_lines, 4)}
+        sources.append(export_source)
     if github_data:
         status = github_data.get("status", "unavailable")
         github_source = {"type": "github", "status": status,

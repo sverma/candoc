@@ -40,7 +40,8 @@ Each observation MUST include a 20–400 character EXACT quotation copied from i
 a concise interpretation explaining the stated contribution, implementation choice, relationship
 between skills and work, or what additional context would make that statement clearer.
 Only discuss what the quoted text actually supports. Attribute claims as described/stated, not verified.
-Resume and LinkedIn sources are self-reported. GitHub README/repository metadata cannot prove account
+Resume and candidate-provided LinkedIn text/exports are self-reported and not verified
+by LinkedIn. GitHub README/repository metadata cannot prove account
 ownership, authorship, code quality or employment; never attribute a team's work to a person.
 Do not assess, score, rank, recommend hiring, reject or infer candidate suitability, personality,
 competence, intelligence, truthfulness, protected characteristics, age or socioeconomic background.
@@ -63,7 +64,8 @@ def _source_text(text: str, limit: int) -> str:
     return clean[:limit]
 
 
-def _sources(resume_text: str, linkedin_text: str, github_data: Optional[Dict[str, Any]]) -> Dict[str, str]:
+def _sources(resume_text: str, linkedin_text: str, github_data: Optional[Dict[str, Any]],
+             linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     result = {}
     resume = _source_text(resume_text, 28_000)
     if resume:
@@ -71,6 +73,12 @@ def _sources(resume_text: str, linkedin_text: str, github_data: Optional[Dict[st
     linkedin = _source_text(linkedin_text, 10_000)
     if linkedin:
         result["linkedin_supplied"] = linkedin
+    if linkedin_data and linkedin_data.get("status") == "available" and linkedin_data.get("type") == "candidate_export":
+        remaining = MAX_INPUT_CHARACTERS - sum(len(value) for value in result.values())
+        # Candidate-uploaded content is sent only after separate external-AI consent.
+        export_text = _source_text(str(linkedin_data.get("text", "")), min(12_000, remaining))
+        if export_text:
+            result["linkedin_export"] = export_text
     if github_data and github_data.get("status") == "available":
         for index, repo in enumerate(github_data.get("repositories", [])[:3]):
             if not isinstance(repo, dict):
@@ -113,7 +121,8 @@ def _validated_review(raw: Any, sources: Dict[str, str]) -> Dict[str, Any]:
 
 async def enhance_assessment(assessment: Dict[str, Any], resume_text: str, linkedin_text: str = "",
                              github_data: Optional[Dict[str, Any]] = None,
-                             consent: bool = False) -> Dict[str, Any]:
+                             consent: bool = False,
+                             linkedin_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return a copy with `semantic_review`; never mutate the score or original object."""
     result = copy.deepcopy(assessment)
     configuration = semantic_configuration()
@@ -130,7 +139,7 @@ async def enhance_assessment(assessment: Dict[str, Any], resume_text: str, linke
         result["semantic_review"] = {**base, "status": "not_configured",
                                      "detail": "AI review is not active: the operator has not configured an OpenAI API key. Your evidence score uses the published rules."}
         return result
-    excerpts = _sources(resume_text, linkedin_text, github_data)
+    excerpts = _sources(resume_text, linkedin_text, github_data, linkedin_data=linkedin_data)
     if not excerpts:
         result["semantic_review"] = {**base, "status": "unavailable", "detail": "No usable document text is available for AI review."}
         return result

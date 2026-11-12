@@ -1,5 +1,6 @@
 import datetime as dt
 import hmac
+import json
 import logging
 import os
 import re
@@ -15,10 +16,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import String, delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from .database import Base, SessionLocal, engine, get_db
-from .models import AuthSession, Introduction, PasswordReset, Profile, User, now
+from .models import AuthSession, Introduction, LinkedInImport, PasswordReset, Profile, User, now
 from .resumes import MAX_UPLOAD, extract_resume
 from .security import COOKIE_NAME, COOKIE_SECURE, SESSION_DAYS, check_password, hash_password, rate_limit, token_hash
 
@@ -198,13 +199,27 @@ def profile_json(profile, private=False):
                     consent_external_ai=profile.consent_external_ai,
                     resume_filename=profile.resume_filename, has_resume=bool(profile.resume_text), resume_text=profile.resume_text,
                     updated_at=profile.updated_at.isoformat())
+        data['linkedin_import'] = linkedin_import_result(profile)
     return data
 
 
+def linkedin_import_result(profile):
+    db = object_session(profile)
+    if not db:
+        return None
+    item = db.scalar(select(LinkedInImport).where(LinkedInImport.profile_id == profile.id)
+                     .execution_options(populate_existing=True))
+    return item.result if item else None
+
+
 def source_revision(profile):
+    imported = linkedin_import_result(profile)
     return (profile.resume_text, tuple(profile.skills or []), profile.linkedin_text,
             profile.github_url, profile.linkedin_url,
-            profile.consent_public_analysis, profile.consent_external_ai)
+            profile.consent_public_analysis, profile.consent_external_ai,
+            # Uploaded source changes have no Profile column migration. Include
+            # a freshly read document fingerprint in the analysis revision.
+            token_hash(json.dumps(imported, sort_keys=True)) if imported else None)
 
 
 def check_analysis_revision(db, profile, revision):
@@ -467,10 +482,50 @@ async def analyze(request: Request, user: User = Depends(candidate_user), db: Se
     # A source request may yield long enough for another tab to revoke consent or
     # delete/edit the profile. Recheck before sending excerpts to an AI provider.
     check_analysis_revision(db, profile, revision)
-    assessment = evaluate_profile(profile.resume_text, profile.skills or [], linkedin_text=profile.linkedin_text or '', github_data=github)
-    assessment = await enhance_assessment(assessment, profile.resume_text, linkedin_text=profile.linkedin_text or '', github_data=github, consent=profile.consent_external_ai)
+    imported = linkedin_import_result(profile)
+    assessment = evaluate_profile(profile.resume_text, profile.skills or [], linkedin_text=profile.linkedin_text or '', github_data=github, linkedin_data=imported)
+    assessment = await enhance_assessment(assessment, profile.resume_text, linkedin_text=profile.linkedin_text or '', github_data=github, consent=profile.consent_external_ai, linkedin_data=imported)
     check_analysis_revision(db, profile, revision)
     profile.assessment = assessment
+    db.commit()
+    return {'profile': profile_json(profile, True)}
+
+
+@app.post('/api/profile/linkedin/import')
+async def import_linkedin(request: Request, file: UploadFile = File(...), user: User = Depends(candidate_user), db: Session = Depends(get_db)):
+    from .linkedin import parse_linkedin_export
+    rate_limit(request, 'linkedin-import-user', 20, 3600, user.id)
+    rate_limit(request, 'linkedin-import-ip', 40, 3600)
+    data = await file.read(MAX_UPLOAD + 1)
+    await file.close()
+    filename = Path((file.filename or 'linkedin-export').replace('\\', '/')).name[:255]
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, 'LinkedIn export files must be no larger than 5 MB.')
+    # Parsing is local. Keep only professional text/metadata, never the original
+    # PDF, TXT, CSV or ZIP bytes and never make an outbound LinkedIn request.
+    result = parse_linkedin_export(filename, data)
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.id).with_for_update()
+                        .execution_options(populate_existing=True))
+    if not profile:
+        raise HTTPException(409, 'Your profile was removed during upload.')
+    item = db.get(LinkedInImport, profile.id)
+    if item:
+        item.result = result
+    else:
+        db.add(LinkedInImport(profile_id=profile.id, result=result))
+    profile.assessment = None
+    db.commit()
+    return {'profile': profile_json(profile, True)}
+
+
+@app.delete('/api/profile/linkedin/import')
+def remove_linkedin_import(user: User = Depends(candidate_user), db: Session = Depends(get_db)):
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.id).with_for_update()
+                        .execution_options(populate_existing=True))
+    if not profile:
+        raise HTTPException(409, 'Your profile was removed during removal.')
+    db.execute(delete(LinkedInImport).where(LinkedInImport.profile_id == profile.id))
+    profile.assessment = None
     db.commit()
     return {'profile': profile_json(profile, True)}
 
@@ -565,6 +620,8 @@ def export_account(user: User = Depends(require_user), db: Session = Depends(get
             'introductions': [introduction_json(item, user) for item in db.scalars(introduction_query(user)).all()]}
     if user.role == 'candidate':
         data['profile'] = profile_json(user.profile, True)
+        data['linkedin_imports'] = [{'created_at': item.created_at.isoformat(), 'result': item.result}
+                                    for item in db.scalars(select(LinkedInImport).where(LinkedInImport.profile_id == user.profile.id)).all()]
     return data
 
 

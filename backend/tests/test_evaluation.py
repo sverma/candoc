@@ -269,3 +269,59 @@ def test_semantic_source_input_is_bounded_and_sensitive_metadata_filtered():
     assert sum(len(value) for value in docs.values()) <= semantic.MAX_INPUT_CHARACTERS
     assert "Age: 27" not in str(docs)
     assert "Gender: male" not in str(docs)
+
+
+
+def test_candidate_export_equivalent_to_pasted_text_and_deduplicated():
+    export = {"status": "available", "type": "candidate_export", "text": RESUME,
+              "filename": "Profile.txt", "imported_at": "2026-11-12T00:00:00+00:00", "sections": ["Profile text"]}
+    uploaded = evaluate_profile("", ["Python"], linkedin_data=export)
+    pasted = evaluate_profile("", ["Python"], linkedin_text=RESUME)
+    assert scoring(uploaded) == scoring(pasted)
+    assert scoring(evaluate_profile(RESUME, ["Python"], linkedin_data=export)) == scoring(evaluate_profile(RESUME, ["Python"]))
+    source = next(item for item in uploaded["sources"] if item["type"] == "linkedin_export")
+    assert source["filename"] == "Profile.txt"
+    assert "self-reported" in source["detail"]
+    assert source["evidence"]
+    assert scoring(evaluate_profile(RESUME, [], linkedin_data=None)) == scoring(evaluate_profile(RESUME, []))
+
+
+def test_candidate_export_semantic_source_explicit_and_quote_checked():
+    quote = "Built a Python service for client teams and improved operations through testing and research."
+    uploaded = {"status": "available", "type": "candidate_export", "text": quote}
+    excerpts = semantic._sources(RESUME, "", None, linkedin_data=uploaded)
+    assert "linkedin_export" in excerpts
+    assert "linkedin_supplied" not in excerpts
+    result = semantic._validated_review({"observations": [
+        {"source": "linkedin_export", "quote": quote, "interpretation": "The supplied document describes a service and states an operational outcome; this remains unverified."},
+        {"source": "linkedin_export", "quote": "Completely invented role with no supporting source.", "interpretation": "Unsupported commentary must be discarded."},
+    ], "questions": []}, excerpts)
+    assert len(result["observations"]) == 1
+    assert result["discarded_observations"] == 1
+    assert "linkedin_export" not in semantic._sources(RESUME, "", None, linkedin_data={"status": "available", "text": quote})
+
+
+def test_candidate_export_semantic_never_sends_without_separate_ai_consent(monkeypatch):
+    def deny(*args, **kwargs):
+        raise AssertionError("No external AI consent was given")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
+    monkeypatch.setattr(semantic.httpx, "AsyncClient", deny)
+    result = asyncio.run(semantic.enhance_assessment(evaluate_profile(RESUME, []), RESUME,
+                        linkedin_data={"status": "available", "type": "candidate_export", "text": "Some professional work description."}))
+    assert result["semantic_review"]["status"] == "consent_required"
+
+
+def test_contiguous_indian_phone_not_sent_to_semantic_provider():
+    excerpts = semantic._sources(RESUME + "\nCall +919876543210 or 9876543210 about this work.", "", None)
+    assert "9876543210" not in str(excerpts)
+
+
+def test_imported_export_has_useful_semantic_coverage_with_global_budget():
+    exported = "Summary\n" + "\n".join(
+        f"Built reporting service {index} for client teams and improved operational reliability."
+        for index in range(300)
+    )
+    sources = semantic._sources(RESUME, "", None,
+        linkedin_data={"status": "available", "type": "candidate_export", "text": exported})
+    assert 4500 < len(sources["linkedin_export"]) <= 12_000
+    assert sum(len(value) for value in sources.values()) <= semantic.MAX_INPUT_CHARACTERS

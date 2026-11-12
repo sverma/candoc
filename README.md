@@ -13,7 +13,7 @@ Candidates upload their own resume, review a transparent **1–5 document eviden
 - PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
 - Five weighted evidence criteria with traceable excerpts and improvement suggestions.
 - Optional public GitHub API enrichment: repository descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
-- Candidate-supplied LinkedIn text. A LinkedIn URL alone does not grant profile API access. No automated LinkedIn scraping.
+- Candidate-uploaded LinkedIn profile PDF, TXT, professional CSV, or data-export ZIP, with extracted text review, replacement and removal. Pasted LinkedIn text remains supported. Profile URLs are references; no automated LinkedIn scraping.
 - Optional, separately consented OpenAI semantic commentary with source-checked quotations. The API key stays on the server. No key is included in this repository.
 - Candidate search, introduction inbox, accept/decline, account export and permanent live-account deletion.
 - Responsive React frontend, FastAPI API, PostgreSQL storage, Docker Compose and nginx HTTPS deployment.
@@ -70,7 +70,17 @@ Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the
 
 OpenAI requests use `store: false`; this is not a guarantee of zero provider retention. Consult your provider's current data policies and account controls. The adapter strips recognized contact/demographic metadata, but this is not exhaustive anonymization. Candidates must review their documents and assessment before making their profile visible.
 
-LinkedIn integration uses pasted/exported candidate text rather than an API whose access has not been approved. Companies are self-registered and their identities are not verified. Email verification, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+LinkedIn integration uses files and text supplied by the candidate. The app extracts only allowlisted professional fields from supported ZIP CSV files, discards the original upload, and retains the extracted text and import metadata privately. It never fetches the LinkedIn profile URL. Companies are self-registered and their identities are not verified. Email verification, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+
+## LinkedIn export import
+
+On a desktop browser, candidates can open their own LinkedIn profile, choose **More** or **Resources**, then **Save to PDF** if the feature is available. LinkedIn documents language/member availability limits. For an archive, use **Settings & Privacy → Data Privacy → How LinkedIn uses your data → Download your data**, select professional categories, and request the archive.
+
+Upload the PDF, TXT, supported professional CSV, or ZIP (maximum 5 MB) under **My profile → Work beyond your resume**. Review the extracted text, then run an assessment. Replacing or removing an import clears the old assessment so stale evidence is not displayed. The profile URL is optional and never fetched.
+
+ZIP parsing reads only supported professional CSV categories and allowlisted columns; messages, connections, contacts, account history and unrelated personal fields are ignored. The archive is bounded, is never extracted to disk, and is discarded after parsing. Only professional text and metadata are stored, included in account export and deleted with the import/account. PDF and TXT are unstructured; review them for sensitive or confidential material before assessment or publication. Uploads are self-supplied and do not independently verify LinkedIn ownership, employment or accuracy.
+
+Export help: [Save a profile as PDF](https://www.linkedin.com/help/linkedin/answer/a541960), [Download your LinkedIn data](https://www.linkedin.com/help/linkedin/answer/a1339364).
 
 ## Password recovery email
 

@@ -64,6 +64,14 @@ class Profile(Base):
     created_at = Column(DateTime(timezone=True), default=now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=now, onupdate=now, nullable=False)
     user = relationship('User', back_populates='profile')
+    linkedin_imports = relationship('LinkedInImport', cascade='all, delete-orphan', passive_deletes=True)
+
+
+class LinkedInImport(Base):
+    __tablename__ = 'linkedin_imports'
+    profile_id = Column(String(36), ForeignKey('profiles.id', ondelete='CASCADE'), primary_key=True)
+    result = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=now, nullable=False)
 
 
 class Introduction(Base):

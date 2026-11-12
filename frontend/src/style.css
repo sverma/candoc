@@ -5263,6 +5263,40 @@ button {
   display: block;
   margin-top: 20px;
 }
+.linkedin-import {
+  padding: 19px;
+  margin: -3px 0 24px;
+  border: 1px solid #dbe6ce;
+  background: #f3f7ed;
+  border-radius: 9px;
+}
+.linkedin-import-heading { display: flex; align-items: center; gap: 8px; color: #658052; }
+.linkedin-import-heading h3 { font-size: 13px; letter-spacing: -.35px; line-height: 1.7; }
+.linkedin-import > p, .linkedin-import-result > p { font-size: 10px; color: #65765b; line-height: 1.9; margin-top: 11px; }
+.linkedin-import .alert { margin: 14px 0; }
+.linkedin-import .checkbox-row { margin-top: 18px; }
+.linkedin-import-button { min-height: 39px; font-size: 10px; margin-top: 17px; padding: 0 13px; }
+.linkedin-url-hint { font-size: 9px; display: block; color: #65765b; margin-top: 11px; }
+.linkedin-import-result { border-top: 1px solid #e0e8d6; margin-top: 17px; padding-top: 15px; }
+.linkedin-import-result > small { display: block; margin-top: 10px; color: #65765b; font-size: 9px; line-height: 1.8; }
+.linkedin-import-result .field { margin: 16px 0; }
+.linkedin-import-result .field > span { font-size: 10px; }
+.linkedin-import-result textarea { font-size: 10px; line-height: 1.9; background: #fcfef8; }
+.linkedin-import-result .button { margin-top: 14px; }
+.linkedin-import-result .badge { white-space: normal; }
+.linkedin-export-help { margin-top: 15px; font-size: 10px; color: #65765b; line-height: 1.9; }
+.linkedin-export-help summary { cursor: pointer; font-weight: 600; color: #46643b; }
+.linkedin-export-help ol { padding-left: 18px; margin: 12px 0; }
+.linkedin-export-help li { margin-bottom: 10px; }
+.linkedin-export-help a { display: inline-flex; align-items: center; gap: 3px; text-decoration: underline; text-underline-offset: 2px; }
+.linkedin-export-zone { min-height: 157px; margin-top: 19px; background: #fbfdf7; }
+.linkedin-export-zone > b { font-size: 11px; }
+.linkedin-export-privacy, .linkedin-ai-note { font-size: 9px !important; line-height: 1.9 !important; }
+.linkedin-ai-note { border-top: 1px solid #e0e8d6; padding-top: 14px; margin-top: 19px !important; }
+.linkedin-export-filename { display: flex; align-items: center; gap: 7px; margin-top: 15px; font-size: 11px; font-weight: 500; color: #526d43; overflow-wrap: anywhere; }
+.linkedin-export-filename svg { flex-shrink: 0; }
+.linkedin-export-sections { margin-top: 13px; }
+.linkedin-export-sections > span { font-size: 8px; }
 .recovery-page > p {
   display: flex;
   align-items: center;
