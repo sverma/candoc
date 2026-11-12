@@ -66,6 +66,18 @@ import "@fontsource/dm-sans/700.css";
 import "@fontsource/sora/500.css";
 import "@fontsource/sora/600.css";
 import "./style.css";
+import {
+  JobsPage,
+  JobDetail,
+  CompanyProfile,
+  HiringDashboard,
+  ApplicationsPage,
+  ApplicationDetail,
+  NotificationsPage,
+  RoleEditor,
+} from "./Hiring.jsx";
+import Preferences, { MobilitySummary } from "./Preferences.jsx";
+import { VerificationPanel, VerifyEmail } from "./Verification.jsx";
 
 const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
@@ -97,9 +109,18 @@ async function api(path, options = {}) {
 function isPublicSourceUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password && !url.port &&
-      ["github.com", "gitlab.com", "linkedin.com", "www.linkedin.com"].includes(url.hostname.toLowerCase());
-  } catch { return false; }
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      ["github.com", "gitlab.com", "linkedin.com", "www.linkedin.com"].includes(
+        url.hostname.toLowerCase(),
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 const initials = (name) =>
   (name || "You")
@@ -233,7 +254,12 @@ function PublicNav() {
           <a href="/#how-it-works" onClick={() => setOpen(false)}>
             How it works
           </a>
-          <Link to="/methodology">Our methodology</Link>
+          <Link to="/jobs" className="hiring-nav-link">
+            Explore roles
+          </Link>
+          <Link to="/methodology" className="hiring-hide-mobile">
+            Our methodology
+          </Link>
           <span className="nav-divider" />
           <Link to={user ? "/app" : "/login"}>
             {user ? "Your workspace" : "Log in"}
@@ -532,8 +558,9 @@ function Landing() {
               behind the resume.
             </h2>
             <p>
-              Discover people through their work. Start a conversation with
-              context, a real role, and a thoughtful introduction.
+              Publish a clear role, discover people through their work, and
+              invite your next teammate. Keep applications, interviews, and
+              offers in one thoughtful workspace.
             </p>
             <Link to="/signup?role=company" className="button lime">
               Find your next teammate <ArrowUpRight size={18} />
@@ -588,7 +615,10 @@ function AuthPage({ signup = false }) {
           : { email: form.email, password: form.password },
       });
       setUser(result.user);
-      navigate("/app");
+      const next = new URLSearchParams(location.search).get("next");
+      navigate(
+        next?.startsWith("/jobs/") && !next.startsWith("//") ? next : "/app",
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -943,14 +973,31 @@ function Workspace() {
   const company = user.role === "company";
   const links = company
     ? [
+        { to: "/app", icon: LayoutDashboard, label: "Hiring overview" },
+        { to: "/app/jobs", icon: BriefcaseBusiness, label: "Your roles" },
         { to: "/app/talent", icon: Users, label: "Discover talent" },
+        {
+          to: "/app/applications",
+          icon: HeartHandshake,
+          label: "Hiring pipeline",
+        },
         { to: "/app/inbox", icon: Mail, label: "Introductions" },
+        { to: "/app/company", icon: Code2, label: "Company profile" },
+        { to: "/app/notifications", icon: Info, label: "Updates" },
       ]
     : [
         { to: "/app", icon: LayoutDashboard, label: "Overview" },
+        { to: "/app/jobs", icon: BriefcaseBusiness, label: "Explore roles" },
+        {
+          to: "/app/applications",
+          icon: HeartHandshake,
+          label: "Applications & invites",
+        },
         { to: "/app/profile", icon: FileText, label: "My profile" },
         { to: "/app/assessment", icon: BarChart3, label: "My assessment" },
+        { to: "/app/preferences", icon: Settings, label: "Work preferences" },
         { to: "/app/inbox", icon: Mail, label: "Introductions" },
+        { to: "/app/notifications", icon: Info, label: "Updates" },
       ];
   const active = (path) =>
     path === "/app"
@@ -1044,17 +1091,19 @@ function Workspace() {
               {company ? "Company" : "Candidate"}
             </span>
             <div className="avatar small">{initials(user.name)}</div>
+            <Link
+              to="/app/settings"
+              className={`badge ${user.email_verified ? "green" : "neutral"}`}
+              title="Verifies email control only, not company identity"
+            >
+              {user.email_verified ? "Email verified" : "Verify email"}
+            </Link>
             <span>{user.name}</span>
           </div>
         </header>
         <div className="workspace-content">
           <Routes>
-            <Route
-              index
-              element={
-                company ? <Navigate to="talent" replace /> : <Overview />
-              }
-            />
+            <Route index element={<HiringDashboard api={api} user={user} />} />
             <Route
               path="profile"
               element={
@@ -1074,6 +1123,75 @@ function Workspace() {
             <Route
               path="talent/:id"
               element={company ? <TalentDetail /> : <Navigate to="/app" />}
+            />
+            <Route
+              path="hiring"
+              element={<HiringDashboard api={api} user={user} />}
+            />
+            <Route
+              path="overview"
+              element={company ? <Navigate to="/app" /> : <Overview />}
+            />
+            <Route path="jobs" element={<JobsPage api={api} user={user} />} />
+            <Route
+              path="jobs/new"
+              element={
+                company ? (
+                  <RoleEditor key={location.pathname} api={api} user={user} />
+                ) : (
+                  <Navigate to="/app/jobs" />
+                )
+              }
+            />
+            <Route
+              path="jobs/:id/edit"
+              element={
+                company ? (
+                  <RoleEditor key={location.pathname} api={api} user={user} />
+                ) : (
+                  <Navigate to="/app/jobs" />
+                )
+              }
+            />
+            <Route
+              path="jobs/:id"
+              element={
+                <JobDetail key={location.pathname} api={api} user={user} />
+              }
+            />
+            <Route
+              path="applications"
+              element={<ApplicationsPage api={api} user={user} />}
+            />
+            <Route
+              path="applications/:id"
+              element={
+                <ApplicationDetail
+                  key={location.pathname}
+                  api={api}
+                  user={user}
+                />
+              }
+            />
+            <Route
+              path="company"
+              element={
+                company ? (
+                  <CompanyProfile api={api} user={user} />
+                ) : (
+                  <Navigate to="/app" />
+                )
+              }
+            />
+            <Route
+              path="preferences"
+              element={
+                company ? <Navigate to="/app" /> : <Preferences api={api} />
+              }
+            />
+            <Route
+              path="notifications"
+              element={<NotificationsPage api={api} user={user} />}
             />
             <Route path="inbox" element={<Inbox />} />
             <Route path="settings" element={<AccountSettings />} />
@@ -1382,9 +1500,14 @@ function ProfileEditor() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const result = await api("/profile/linkedin/import", { method: "POST", body });
+      const result = await api("/profile/linkedin/import", {
+        method: "POST",
+        body,
+      });
       setProfile(result.profile);
-      setSuccess("Your LinkedIn export has been imported. Review the extracted text below, save any profile changes, then run an assessment.");
+      setSuccess(
+        "Your LinkedIn export has been imported. Review the extracted text below, save any profile changes, then run an assessment.",
+      );
     } catch (e) {
       setLinkedinError(e.message);
     } finally {
@@ -1398,9 +1521,13 @@ function ProfileEditor() {
     setLinkedinError("");
     setBusy("linkedin-remove");
     try {
-      const result = await api("/profile/linkedin/import", { method: "DELETE" });
+      const result = await api("/profile/linkedin/import", {
+        method: "DELETE",
+      });
       setProfile(result.profile);
-      setSuccess("Uploaded LinkedIn content removed. You can upload another export at any time.");
+      setSuccess(
+        "Uploaded LinkedIn content removed. You can upload another export at any time.",
+      );
     } catch (e) {
       setLinkedinError(e.message);
     } finally {
@@ -1625,7 +1752,8 @@ function ProfileEditor() {
                     I’ve provided when I run an assessment.
                     <small>
                       You can withdraw this permission at any time. LinkedIn
-                      content comes only from an export you upload or text you paste.
+                      content comes only from an export you upload or text you
+                      paste.
                     </small>
                   </span>
                 </label>
@@ -1637,8 +1765,8 @@ function ProfileEditor() {
                     onChange={change}
                   />
                   <span>
-                    I allow Candoc to read public GitLab.com data from the profile
-                    I’ve provided when I run an assessment.
+                    I allow Candoc to read public GitLab.com data from the
+                    profile I’ve provided when I run an assessment.
                     <small>
                       Optional and separate from GitHub permission. You can
                       withdraw this permission at any time. Public account data
@@ -1654,9 +1782,9 @@ function ProfileEditor() {
                     onChange={change}
                   />
                   <span>
-                    I allow Candoc to send relevant resume, pasted or uploaded LinkedIn,
-                    and public GitHub and GitLab excerpts to OpenAI for a deeper
-                    qualitative review.
+                    I allow Candoc to send relevant resume, pasted or uploaded
+                    LinkedIn, and public GitHub and GitLab excerpts to OpenAI
+                    for a deeper qualitative review.
                     <small>
                       Optional. The five-part evidence score works without this.
                       AI commentary is supplementary and requires human review.
@@ -1736,7 +1864,14 @@ function ProfileEditor() {
   );
 }
 
-function LinkedinImportControl({ imported, aiConsent, busy, error, onImport, onRemove }) {
+function LinkedinImportControl({
+  imported,
+  aiConsent,
+  busy,
+  error,
+  onImport,
+  onRemove,
+}) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const fileRef = useRef(null);
   async function choose(event) {
@@ -1746,16 +1881,182 @@ function LinkedinImportControl({ imported, aiConsent, busy, error, onImport, onR
   }
   return (
     <div className="linkedin-import">
-      <div className="linkedin-import-heading"><Linkedin size={18} /><h3>Upload your LinkedIn profile export</h3></div>
-      <p>Bring your LinkedIn experience into focus with a file you export yourself. Upload your profile PDF or a data export ZIP containing professional information such as Profile, Positions, Education, and Skills.</p>
-      <details className="linkedin-export-help"><summary>How to get your export</summary><ol><li><b>PDF (recommended):</b> On LinkedIn desktop, open Me → your profile → More or Resources → Save to PDF. This option is available for some members and English profiles; it is not available in the mobile app.</li><li><b>ZIP alternative:</b> Open Me → Settings &amp; Privacy → Data Privacy → How LinkedIn uses your data → Download your data. Select professional categories, then Request archive.</li><li>Upload the file here, review the extracted text, and run your Candoc assessment. Choose professional data only and keep the file under 5 MB.</li></ol><p>LinkedIn’s guides: <a href="https://www.linkedin.com/help/linkedin/answer/a541960" target="_blank" rel="noreferrer">Save profile as PDF <ExternalLink size={11} /></a> · <a href="https://www.linkedin.com/help/linkedin/answer/a1339364" target="_blank" rel="noreferrer">Download your data <ExternalLink size={11} /></a></p></details>
-      <input type="file" ref={fileRef} accept=".pdf,.txt,.csv,.zip" onChange={choose} hidden />
+      <div className="linkedin-import-heading">
+        <Linkedin size={18} />
+        <h3>Upload your LinkedIn profile export</h3>
+      </div>
+      <p>
+        Bring your LinkedIn experience into focus with a file you export
+        yourself. Upload your profile PDF or a data export ZIP containing
+        professional information such as Profile, Positions, Education, and
+        Skills.
+      </p>
+      <details className="linkedin-export-help">
+        <summary>How to get your export</summary>
+        <ol>
+          <li>
+            <b>PDF (recommended):</b> On LinkedIn desktop, open Me → your
+            profile → More or Resources → Save to PDF. This option is available
+            for some members and English profiles; it is not available in the
+            mobile app.
+          </li>
+          <li>
+            <b>ZIP alternative:</b> Open Me → Settings &amp; Privacy → Data
+            Privacy → How LinkedIn uses your data → Download your data. Select
+            professional categories, then Request archive.
+          </li>
+          <li>
+            Upload the file here, review the extracted text, and run your Candoc
+            assessment. Choose professional data only and keep the file under 5
+            MB.
+          </li>
+        </ol>
+        <p>
+          LinkedIn’s guides:{" "}
+          <a
+            href="https://www.linkedin.com/help/linkedin/answer/a541960"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Save profile as PDF <ExternalLink size={11} />
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://www.linkedin.com/help/linkedin/answer/a1339364"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Download your data <ExternalLink size={11} />
+          </a>
+        </p>
+      </details>
+      <input
+        type="file"
+        ref={fileRef}
+        accept=".pdf,.txt,.csv,.zip"
+        onChange={choose}
+        hidden
+      />
       <Alert error={error} />
-      <button type="button" className="upload-zone linkedin-export-zone" onClick={() => fileRef.current?.click()} disabled={!!busy}>{busy === "linkedin-import" ? <LoaderCircle className="spin" size={27} /> : <UploadCloud size={28} />}<b>{busy === "linkedin-import" ? "Reading your export…" : imported ? "Replace your LinkedIn export" : "Choose your LinkedIn export"}</b><span>PDF, TXT, CSV or ZIP · Up to 5 MB</span><small>Only upload your own profile information.</small></button>
-      <p className="linkedin-export-privacy">We retain extracted professional text, not the original uploaded file. For ZIP exports, only supported professional CSV sections are read; connections, messages, and other personal files are ignored. Imported statements remain candidate-provided and are not independently verified.</p>
-      {imported && <div className="linkedin-import-result" role="status"><span className="badge green">Candidate-provided export</span>{imported.filename && <strong className="linkedin-export-filename"><FileText size={15} />{imported.filename}</strong>}{imported.imported_at && <small>Imported {formatDate(imported.imported_at)}</small>}<p>{imported.detail}</p>{imported.sections?.length > 0 && <div className="chips linkedin-export-sections">{imported.sections.map((section, i) => <span key={i}>{typeof section === "string" ? section : section?.name || section?.type || "Professional section"}</span>)}</div>}{imported.text && <label className="field"><span>Review extracted professional text</span><textarea value={imported.text} readOnly rows={7} aria-label="Uploaded LinkedIn export text, read only" /><small>Replace the file or remove the import if this content does not reflect what you want to share.</small></label>}<button type="button" className="button outline small" onClick={() => setConfirmRemove(true)} disabled={!!busy}><Trash2 size={14} />Remove uploaded content</button></div>}
-      <p className="linkedin-ai-note">{aiConsent ? "Your separate AI permission is on. Uploaded LinkedIn excerpts may be sent to OpenAI when you run an assessment." : "Uploading does not authorize OpenAI processing. That requires the separate AI checkbox below."}</p>
-      {confirmRemove && <Modal title="Remove uploaded LinkedIn content?" close={() => setConfirmRemove(false)}><p className="modal-description">This removes the extracted text from this upload and clears its assessment context. Your separately pasted LinkedIn content is kept. You can upload another file whenever you choose.</p><div className="modal-actions"><button type="button" className="button outline" onClick={() => setConfirmRemove(false)}>Keep content</button><button type="button" className="button danger" disabled={!!busy} onClick={async () => { await onRemove(); setConfirmRemove(false); }}>{busy === "linkedin-remove" ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}Remove content</button></div></Modal>}
+      <button
+        type="button"
+        className="upload-zone linkedin-export-zone"
+        onClick={() => fileRef.current?.click()}
+        disabled={!!busy}
+      >
+        {busy === "linkedin-import" ? (
+          <LoaderCircle className="spin" size={27} />
+        ) : (
+          <UploadCloud size={28} />
+        )}
+        <b>
+          {busy === "linkedin-import"
+            ? "Reading your export…"
+            : imported
+              ? "Replace your LinkedIn export"
+              : "Choose your LinkedIn export"}
+        </b>
+        <span>PDF, TXT, CSV or ZIP · Up to 5 MB</span>
+        <small>Only upload your own profile information.</small>
+      </button>
+      <p className="linkedin-export-privacy">
+        We retain extracted professional text, not the original uploaded file.
+        For ZIP exports, only supported professional CSV sections are read;
+        connections, messages, and other personal files are ignored. Imported
+        statements remain candidate-provided and are not independently verified.
+      </p>
+      {imported && (
+        <div className="linkedin-import-result" role="status">
+          <span className="badge green">Candidate-provided export</span>
+          {imported.filename && (
+            <strong className="linkedin-export-filename">
+              <FileText size={15} />
+              {imported.filename}
+            </strong>
+          )}
+          {imported.imported_at && (
+            <small>Imported {formatDate(imported.imported_at)}</small>
+          )}
+          <p>{imported.detail}</p>
+          {imported.sections?.length > 0 && (
+            <div className="chips linkedin-export-sections">
+              {imported.sections.map((section, i) => (
+                <span key={i}>
+                  {typeof section === "string"
+                    ? section
+                    : section?.name || section?.type || "Professional section"}
+                </span>
+              ))}
+            </div>
+          )}
+          {imported.text && (
+            <label className="field">
+              <span>Review extracted professional text</span>
+              <textarea
+                value={imported.text}
+                readOnly
+                rows={7}
+                aria-label="Uploaded LinkedIn export text, read only"
+              />
+              <small>
+                Replace the file or remove the import if this content does not
+                reflect what you want to share.
+              </small>
+            </label>
+          )}
+          <button
+            type="button"
+            className="button outline small"
+            onClick={() => setConfirmRemove(true)}
+            disabled={!!busy}
+          >
+            <Trash2 size={14} />
+            Remove uploaded content
+          </button>
+        </div>
+      )}
+      <p className="linkedin-ai-note">
+        {aiConsent
+          ? "Your separate AI permission is on. Uploaded LinkedIn excerpts may be sent to OpenAI when you run an assessment."
+          : "Uploading does not authorize OpenAI processing. That requires the separate AI checkbox below."}
+      </p>
+      {confirmRemove && (
+        <Modal
+          title="Remove uploaded LinkedIn content?"
+          close={() => setConfirmRemove(false)}
+        >
+          <p className="modal-description">
+            This removes the extracted text from this upload and clears its
+            assessment context. Your separately pasted LinkedIn content is kept.
+            You can upload another file whenever you choose.
+          </p>
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="button outline"
+              onClick={() => setConfirmRemove(false)}
+            >
+              Keep content
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              disabled={!!busy}
+              onClick={async () => {
+                await onRemove();
+                setConfirmRemove(false);
+              }}
+            >
+              {busy === "linkedin-remove" ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Trash2 size={16} />
+              )}
+              Remove content
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1949,13 +2250,21 @@ function AssessmentReport({ assessment, name, compact = false }) {
                 )}
               </span>
               <div>
-                <b>{source.type?.includes("linkedin") ? (source.type === "linkedin_export" ? "LinkedIn export · Candidate provided" : "LinkedIn content · Candidate provided") : source.type === "gitlab" ? "GitLab public work" : source.type?.replaceAll("_", " ")}</b>
+                <b>
+                  {source.type?.includes("linkedin")
+                    ? source.type === "linkedin_export"
+                      ? "LinkedIn export · Candidate provided"
+                      : "LinkedIn content · Candidate provided"
+                    : source.type === "gitlab"
+                      ? "GitLab public work"
+                      : source.type?.replaceAll("_", " ")}
+                </b>
                 <p>{source.detail}</p>
                 {source.url && isPublicSourceUrl(source.url) && (
-                    <a href={source.url} target="_blank" rel="noreferrer">
-                      View source <ExternalLink size={11} />
-                    </a>
-                  )}
+                  <a href={source.url} target="_blank" rel="noreferrer">
+                    View source <ExternalLink size={11} />
+                  </a>
+                )}
               </div>
               <span className="badge neutral">
                 {source.status?.replaceAll("_", " ")}
@@ -2130,6 +2439,12 @@ function MyAssessment() {
 }
 
 function TalentDirectory() {
+  const [catalogs, setCatalogs] = useState({ countries: [], regions: [] });
+  useEffect(() => {
+    api("/hiring/catalogs")
+      .then(setCatalogs)
+      .catch(() => {});
+  }, []);
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2139,6 +2454,14 @@ function TalentDirectory() {
     location: "",
     min_score: "",
     sort: "recent",
+    engagement_type: "",
+    work_mode: "",
+    relocation: "",
+    sponsorship_need: "",
+    preferred_country: "",
+    preferred_region: "",
+    authorization_country: "",
+    authorization_region: "",
   });
   const [showFilters, setShowFilters] = useState(false);
   useEffect(() => {
@@ -2204,7 +2527,7 @@ function TalentDirectory() {
         </label>
       </div>
       {showFilters && (
-        <div className="directory-filters">
+        <div className="directory-filters hiring-mobility-filters">
           <Field
             label="Skill"
             name="skill"
@@ -2232,6 +2555,113 @@ function TalentDirectory() {
               <option value="4">4.0 and above</option>
             </select>
           </label>
+          <label className="field">
+            <span>Engagement preference</span>
+            <select
+              name="engagement_type"
+              value={filters.engagement_type}
+              onChange={change}
+            >
+              <option value="">Any preference</option>
+              {[
+                "permanent",
+                "contract",
+                "freelance",
+                "consulting",
+                "temporary",
+                "internship",
+                "apprenticeship",
+                "volunteer",
+              ].map((v) => (
+                <option key={v} value={v}>
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Work arrangement</span>
+            <select
+              name="work_mode"
+              value={filters.work_mode}
+              onChange={change}
+            >
+              <option value="">Any arrangement</option>
+              <option value="remote">Remote</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="onsite">On-site</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Open to relocation</span>
+            <select
+              name="relocation"
+              value={filters.relocation}
+              onChange={change}
+            >
+              <option value="">Any preference</option>
+              <option value="true">Yes, as declared</option>
+              <option value="false">No, as declared</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Sponsorship preference</span>
+            <select
+              name="sponsorship_need"
+              value={filters.sponsorship_need}
+              onChange={change}
+            >
+              <option value="">Any declaration</option>
+              <option value="not_required">Not required</option>
+              <option value="required">Required</option>
+              <option value="discuss">Discuss</option>
+              <option value="not_specified">Not specified</option>
+            </select>
+          </label>
+          {[
+            {
+              name: "preferred_country",
+              label: "Preferred work country",
+              options: catalogs.countries,
+            },
+            {
+              name: "preferred_region",
+              label: "Preferred work region",
+              options: catalogs.regions,
+            },
+            {
+              name: "authorization_country",
+              label: "Shared authorization: country",
+              options: catalogs.countries,
+            },
+            {
+              name: "authorization_region",
+              label: "Shared authorization: region",
+              options: catalogs.regions,
+            },
+          ].map((field) => (
+            <label className="field" key={field.name}>
+              <span>{field.label}</span>
+              <select
+                name={field.name}
+                value={filters[field.name]}
+                onChange={change}
+              >
+                <option value="">Any scope</option>
+                {field.options?.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <p className="hiring-filter-privacy">
+            Authorization filters include only explicitly shared, unexpired,
+            self-declared country or region scopes. They do not verify legal
+            eligibility. Missing declarations are not a hiring decision;
+            nationality is never a filter or ranking input.
+          </p>
           <button
             className="text-link"
             onClick={() =>
@@ -2241,6 +2671,14 @@ function TalentDirectory() {
                 location: "",
                 min_score: "",
                 sort: "recent",
+                engagement_type: "",
+                work_mode: "",
+                relocation: "",
+                sponsorship_need: "",
+                preferred_country: "",
+                preferred_region: "",
+                authorization_country: "",
+                authorization_region: "",
               })
             }
           >
@@ -2421,7 +2859,13 @@ function TalentDetail() {
               </a>
             )}
             {profile.gitlab_url && isPublicSourceUrl(profile.gitlab_url) && (
-              <a href={profile.gitlab_url} target="_blank" rel="noreferrer" aria-label="GitLab profile" title="GitLab.com profile">
+              <a
+                href={profile.gitlab_url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitLab profile"
+                title="GitLab.com profile"
+              >
                 <Gitlab size={19} />
               </a>
             )}
@@ -2448,6 +2892,9 @@ function TalentDetail() {
           </div>
         </div>
       </section>
+      {profile.work_preferences && (
+        <MobilitySummary preferences={profile.work_preferences} />
+      )}
       <h2 className="subsection-title">Experience, with evidence.</h2>
       <AssessmentReport assessment={profile.assessment} name={profile.name} />
       {intro && (
@@ -2824,6 +3271,11 @@ function AccountSettings() {
         description="A clear view of what you share, and the controls to manage it."
       />
       <Alert error={error} />
+      <VerificationPanel
+        api={api}
+        user={user}
+        onVerified={(fresh) => fresh && setUser(fresh)}
+      />
       <section className="panel settings-panel">
         <div className="panel-heading">
           <h2>Account details</h2>
@@ -3027,23 +3479,24 @@ function Methodology() {
           Protected characteristics, name, age, gender, photographs, university
           or employer prestige, career gaps, and social popularity are excluded.
           Missing GitHub, GitLab, or LinkedIn content does not reduce the score.
-          Stars, followers, and other popularity counts do not measure professional ability.
+          Stars, followers, and other popularity counts do not measure
+          professional ability.
         </p>
         <h2>Sources, consent, and limits</h2>
         <p>
-          Resume text is extracted from the document you upload. When you opt
-          in separately for each service, we can review public GitHub repositories
+          Resume text is extracted from the document you upload. When you opt in
+          separately for each service, we can review public GitHub repositories
           or GitLab.com personal projects, README content, and languages from
           your provided profiles. These optional sources add context and do not
-          change the numeric evidence score. Linked accounts do not independently
-          verify authorship or employment. LinkedIn context comes from a profile export
-          you upload or content you paste yourself. Candoc does not fetch or
-          scrape LinkedIn pages. PDF, TXT, CSV, and supported professional CSV
-          sections in data export ZIPs can be imported. Extracted professional
-          text is retained; original upload files are discarded. ZIP connections,
-          messages, and other personal files are ignored. Uploaded or pasted
-          statements are candidate-provided context, not independent employment
-          verification.
+          change the numeric evidence score. Linked accounts do not
+          independently verify authorship or employment. LinkedIn context comes
+          from a profile export you upload or content you paste yourself. Candoc
+          does not fetch or scrape LinkedIn pages. PDF, TXT, CSV, and supported
+          professional CSV sections in data export ZIPs can be imported.
+          Extracted professional text is retained; original upload files are
+          discarded. ZIP connections, messages, and other personal files are
+          ignored. Uploaded or pasted statements are candidate-provided context,
+          not independent employment verification.
         </p>
         <p>
           The numerical evidence assessment uses transparent text-based rules.
@@ -3105,9 +3558,9 @@ function Privacy() {
           Your account includes your name, email, account type, and a securely
           hashed password. Candidate accounts may include a resume, extracted
           resume text, professional profile, candidate-supplied LinkedIn
-          content, extracted professional text from a LinkedIn export you upload,
-          public GitHub and GitLab evidence if separately requested, and assessment results.
-          We also store introductions and their status.
+          content, extracted professional text from a LinkedIn export you
+          upload, public GitHub and GitLab evidence if separately requested, and
+          assessment results. We also store introductions and their status.
         </p>
         <h2>Private until you choose otherwise</h2>
         <p>
@@ -3133,29 +3586,29 @@ function Privacy() {
         </p>
         <h2>Connected professional profiles</h2>
         <p>
-          GitHub and GitLab.com enrichment each require their own permission
-          and read only public information from the personal profiles you supply.
+          GitHub and GitLab.com enrichment each require their own permission and
+          read only public information from the personal profiles you supply.
           GitLab support includes public personal projects, README content, and
           languages on GitLab.com. Account availability does not affect your
           evidence score, and linked work does not independently verify
-          authorship or employment. You can withdraw either permission
-          in your profile settings and rerun your assessment. LinkedIn profile
-          URLs are reference links only and are not fetched or scraped. You can
-          upload your own LinkedIn profile PDF, TXT, CSV, or data export ZIP, or
-          paste relevant profile text. We retain extracted professional text,
-          not the original uploaded file. ZIP imports read only supported
-          professional CSV sections such as Profile, Positions, Education, and
-          Skills; connections, messages, and unrelated personal files are ignored.
-          You can review, replace, or remove your uploaded content at any time.
+          authorship or employment. You can withdraw either permission in your
+          profile settings and rerun your assessment. LinkedIn profile URLs are
+          reference links only and are not fetched or scraped. You can upload
+          your own LinkedIn profile PDF, TXT, CSV, or data export ZIP, or paste
+          relevant profile text. We retain extracted professional text, not the
+          original uploaded file. ZIP imports read only supported professional
+          CSV sections such as Profile, Positions, Education, and Skills;
+          connections, messages, and unrelated personal files are ignored. You
+          can review, replace, or remove your uploaded content at any time.
           Pasted LinkedIn content stays separate. These are candidate-provided
-          statements and do not independently verify employment.
-          If you separately opt in to deeper AI review, relevant resume,
-          pasted or uploaded LinkedIn, and public GitHub and GitLab excerpts are transmitted to OpenAI to
-          produce supplementary qualitative commentary. This is optional; the
-          evidence score does not require it. Automated filtering limits direct
-          contact details before transmission, but you should remove
-          confidential or unrelated personal information yourself. The provider
-          processes these excerpts under its API data policies.
+          statements and do not independently verify employment. If you
+          separately opt in to deeper AI review, relevant resume, pasted or
+          uploaded LinkedIn, and public GitHub and GitLab excerpts are
+          transmitted to OpenAI to produce supplementary qualitative commentary.
+          This is optional; the evidence score does not require it. Automated
+          filtering limits direct contact details before transmission, but you
+          should remove confidential or unrelated personal information yourself.
+          The provider processes these excerpts under its API data policies.
         </p>
         <h2>Export, visibility, and deletion</h2>
         <p>
@@ -3168,17 +3621,41 @@ function Privacy() {
           backups for up to seven days. There is currently no offsite backup
           replication.
         </p>
+        <h2>Your hiring workspace</h2>
+        <p>
+          Published company profiles and roles are public. Draft and paused
+          roles are visible only to their owners, while existing applicants
+          retain the role context. Applications, role invitations, messages,
+          interviews, offers, and in-app notifications are stored for the
+          participants. Applying or accepting an invitation shares your
+          professional profile with that hiring team for the application, even
+          if you later hide your directory profile. Original resume files are
+          never shared automatically.
+        </p>
+        <p>
+          Work preferences are optional. Nationalities and work-authorization
+          declarations remain private unless you explicitly choose to share each
+          one. These fields never enter the evidence score or AI review. Country
+          and region scopes are self-declared and do not prove legal
+          eligibility. You can change sharing settings and revoke future contact
+          visibility; information already seen by someone cannot be retracted.
+          Interview scheduling and hiring messages stay in Candoc and do not
+          create external calendar events. Offers record terms and responses;
+          contract signing and payments happen separately.
+        </p>
         <h2>Cookies and security</h2>
         <p>
-          Company identities and email addresses are not independently verified
-          in this initial release. Use your own judgment before sharing
-          additional information. Password recovery uses an expiring, single-use
-          link sent to the account email through our configured mail service. A
-          successful reset signs out existing sessions. Email verification on
-          signup is not available yet. We use an essential session cookie to
-          keep you signed in. Access controls separate candidate and company
-          data. The production service uses HTTPS. We do not use advertising
-          trackers in the application.
+          Company identities are not independently verified. Account email
+          verification confirms control of an email address only. It is required
+          to publish roles or share contact details in a hiring application. Use
+          your own judgment before sharing additional information. Password
+          recovery uses an expiring, single-use link sent to the account email
+          through our configured mail service. A successful reset signs out
+          existing sessions. Email verification on signup can be completed from
+          Account & privacy. We use an essential session cookie to keep you
+          signed in. Access controls separate candidate and company data. The
+          production service uses HTTPS. We do not use advertising trackers in
+          the application.
         </p>
         <h2>Responsible use</h2>
         <p>
@@ -3194,6 +3671,23 @@ function Privacy() {
             Read the evaluation methodology <ArrowRight size={16} />
           </Link>
         </div>
+      </main>
+      <Footer />
+    </>
+  );
+}
+function PublicHiring({ detail = false }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  return (
+    <>
+      <PublicNav />
+      <main className="container hiring-public">
+        {detail ? (
+          <JobDetail key={location.pathname} api={api} user={user} />
+        ) : (
+          <JobsPage api={api} user={user} />
+        )}
       </main>
       <Footer />
     </>
@@ -3274,6 +3768,17 @@ function App() {
         <Route
           path="/reset-password"
           element={<PasswordRecovery key="reset" reset />}
+        />
+        <Route path="/jobs" element={<PublicHiring />} />
+        <Route path="/jobs/:id" element={<PublicHiring detail />} />
+        <Route
+          path="/verify-email"
+          element={
+            <VerifyEmail
+              api={api}
+              onVerified={(fresh) => fresh && setUser(fresh)}
+            />
+          }
         />
         <Route path="/methodology" element={<Methodology />} />
         <Route path="/privacy" element={<Privacy />} />

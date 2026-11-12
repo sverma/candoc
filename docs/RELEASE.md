@@ -1,4 +1,19 @@
-# Initial release verification
+# Release verification
+
+## Hiring platform expansion — 12 November 2026
+
+Version 2 adds eight engagement types, searchable roles and saved roles, company profiles, candidate work/mobility preferences, reverse invitations and direct applications, a participant-only conversation/pipeline, interviews with RSVP, offers, in-app notifications and email-control verification. Existing accounts, assessments and introductions are preserved; all new storage is additive.
+
+- **285 backend tests passed**, including 41 preference/catalog/privacy cases, 23 hiring cases and five email-verification cases. The frontend production build passed locally and in the Linux deployment container. A TestClient deprecation warning remains in the test toolchain; no test failed.
+- A public HTTPS/PostgreSQL smoke check covered all eight engagement types, drafts and publication, company email-verification gates, visa/relocation and saved-role filters, a private-profile application, contact sharing and revocation, company invitations, messages, interview scheduling/rescheduling/RSVP, offers, explicit hire, notifications, account export and cascade deletion.
+- Real verification messages were accepted by the existing encrypted SMTP service for Resend's simulated-delivery sink. Concurrent public submissions consumed each verification link once; concurrent offer creation produced exactly one active offer. This proves provider acceptance and application behavior, not delivery to every real-world inbox.
+- Browser review checked company and candidate dashboards, a contract-role draft with hourly compensation and support terms, an application message, a timezone-aware interview, offer creation/confirmation, candidate RSVP, privacy defaults and preference saving. Desktop and 390-pixel layouts were inspected; the reviewed browser session reported no console errors/warnings. This is not an exhaustive accessibility, browser or device audit.
+- Independent review found and fixed stale application/role data during route changes and pending interviews stranded after hiring. Record identity guards prevent actions against another displayed record. Hiring now cancels scheduled interviews while preserving completed history.
+- A pre-upgrade private backup completed. All synthetic accounts and linked hiring records were removed; the three original accounts remained and hiring test tables returned to zero. Sensitive preference fields never enter scoring/AI; private notes remain candidate-only and recruiter filters cannot infer authorization from nationality.
+
+Offers are recorded proposals/responses, with formal contracts, signatures, payroll, payments, immigration verification, external calendar sync and organization team seats outside this release. Work rights and company identity remain unverified; email verification establishes email control only. See README for the detailed operating boundaries.
+
+## Initial release
 
 Deployed on 12 November 2026 to the requested server, with an isolated Compose project and PostgreSQL database. Primary URL: https://candoc.org. The www hostname and temporary bootstrap hostname redirect to the primary site.
 
@@ -24,4 +39,4 @@ Deployed on 12 November 2026 to the requested server, with an isolated Compose p
 
 The numeric 1–5 assessment is a transparent heuristic score of document evidence. Optional OpenAI commentary provides deeper qualitative observations but does not change that score. Neither feature verifies employment, skill level, identity, source ownership or hiring suitability. LinkedIn uses candidate-uploaded PDF/TXT/CSV/ZIP exports and pasted content. URLs are references only; no LinkedIn website request is made. Scores are not calibrated against job performance.
 
-Company and email ownership verification, moderation tooling, OCR, multilingual review and a calibrated hiring model remain outside this initial release. See README and EVALUATION for operating limits.
+The initial release did not verify company identity or email ownership. The expansion above adds email-control verification; company identity verification, moderation tooling, OCR, multilingual review and a calibrated hiring model remain outside this release. See README and EVALUATION for operating limits.

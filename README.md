@@ -1,15 +1,22 @@
 # Candoc
 
-**Companies apply to people.** An open-source reverse hiring marketplace with private candidate profiles, resume evidence review, public GitHub/GitLab observations, and consent-based introductions.
+**Companies apply to people. People find their next opportunity.** An open-source hiring platform for permanent work, contracts, freelancing and consulting, with private candidate profiles, resume evidence review and a shared hiring workspace.
 
 Live application: [candoc.org](https://candoc.org) · Source: [sverma/candoc](https://github.com/sverma/candoc)
 
-Candidates upload their own resume, review a transparent **1–5 document evidence score**, and choose whether companies can discover their profile. Companies create an account, search published profiles, and send a role, compensation range, work arrangement, and personal introduction. Contact details are shared only after acceptance.
+Candidates upload their own resume, review a transparent **1–5 document evidence score**, and choose whether companies can discover their profile. Companies publish roles or invite discoverable candidates; candidates can apply directly. Applications provide messages, interviews, offers and a human-controlled pipeline. Contact email sharing in applications requires an explicit candidate opt-in; legacy introductions release contact after acceptance.
 
 ## Included
 
 - Candidate and company signup/login with Argon2id password hashes, revocable cookie sessions, origin checks and request limits.
 - Password recovery via expiring, single-use email links. A successful reset revokes every session; reset tokens are stored only as hashes.
+- Email verification with single-use 24-hour links, required to publish roles or share a candidate's contact email in applications. Verification confirms email control, not company identity.
+- Public, searchable roles for permanent, contract, freelance, consulting, temporary, internship, apprenticeship and volunteer work; remote/hybrid/onsite arrangements, time commitment, duration, hours, skill requirements and compensation in ISO currencies at hourly through project/yearly rates.
+- Optional visa sponsorship and relocation support, each with available/case-by-case/unavailable/unspecified states and explanatory terms. Geographic restrictions and support filters are separate from legal eligibility.
+- Candidate preferences for engagement types, preferred countries/regions, availability, notice, hours, compensation, languages and timezone. Optional nationality and country/region authorization declarations have independent sharing controls; permit notes always stay private.
+- Company profiles, draft/published/paused/closed role lifecycle, saved roles, direct applications and company invitations. A private candidate can explicitly share a professional profile with an application without publishing it in discovery.
+- Participant-only hiring conversations, interview scheduling/rescheduling with timezone-aware timestamps and candidate RSVP, expiring offers with candidate accept/decline, and explicit company hiring confirmation after an accepted offer.
+- Live pipeline/dashboard counts, upcoming interviews, in-app notifications, full account export and cascade deletion of linked hiring records.
 - PDF, DOCX and UTF-8 TXT resume extraction, private originals, bounded file sizes and document expansion.
 - Five weighted evidence criteria with traceable excerpts and improvement suggestions.
 - Optional public GitHub and GitLab.com API enrichment: repository/project descriptions, languages, and README excerpts. No follower/star scoring; account ownership and contribution are unverified.
@@ -70,7 +77,17 @@ Set `OPENAI_API_KEY` and `AI_MODEL` in the server-only `.env`, then recreate the
 
 OpenAI requests use `store: false`; this is not a guarantee of zero provider retention. Consult your provider's current data policies and account controls. The adapter strips recognized contact/demographic metadata, but this is not exhaustive anonymization. Candidates must review their documents and assessment before making their profile visible.
 
-LinkedIn integration uses files and text supplied by the candidate. The app extracts only allowlisted professional fields from supported ZIP CSV files, discards the original upload, and retains the extracted text and import metadata privately. It never fetches the LinkedIn profile URL. Companies are self-registered and their identities are not verified. Email verification, company verification, moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are not included in this initial release. Do not represent these as working features.
+LinkedIn integration uses files and text supplied by the candidate. The app extracts only allowlisted professional fields from supported ZIP CSV files, discards the original upload, and retains the extracted text and import metadata privately. It never fetches the LinkedIn profile URL. Companies are self-registered; email control can be verified, but company identity is not verified. Moderation tooling, multilingual/OCR extraction, automated employment verification and calibration against real hiring outcomes are outside this release.
+
+## Hiring and mobility
+
+Candidates manage **Work preferences**, companies manage **Company profile** and **Roles**, and both use the hiring dashboard and application workspace. Companies verify their email under **Account & privacy** before publishing. Existing profiles and introductions continue to work; hiring data uses additive tables with no automatic publication or demographic defaults.
+
+Country/territory labels and supported currencies are bundled ISO catalogs. Regions such as EU, EEA and APAC are geographic declarations; citizenship never creates a work-rights claim, and region selection never proves legal permission in a member country. Authorization is self-declared and unverified. Only explicitly shared, current country/region declarations can match corresponding recruiter filters; exact scopes are matched without inferring one from another. Expired declarations remain visible with an expiry marker when shared. There is no nationality search filter.
+
+Nationality, work rights, sponsorship and relocation preferences are stored separately from resume evidence. They do not change scores and are never passed from preferences to AI review. Candidates control profile visibility and application email sharing; revoking sharing prevents future API disclosure but cannot erase information a recipient has already exported. Withdrawing an application does not erase its participant-visible conversation history. Account deletion removes linked live records for both parties, including the conversation; retained backups follow the policy below.
+
+Offers record proposed terms and a candidate's response. They do not provide electronic signatures, payment/escrow, payroll, invoicing, background checks, immigration advice or verification, benefits administration or an employer-of-record service. Consulting/freelance engagements use the same proposal, conversation and offer workflow; project delivery and payments are arranged separately. The current company account represents one recruiter/company, without team seats or organization RBAC. Notifications are in-app; only verification and recovery use transactional email. Calendar links and meeting locations are stored, not synchronized with an external calendar. See [API](docs/API.md) and [release verification](docs/RELEASE.md).
 
 ## GitLab.com profiles
 
@@ -106,4 +123,4 @@ To restore into a stopped API, identify a backup directory, stop `api web`, and 
 
 ## Open source
 
-MIT licensed. Dependencies retain their own licenses. All secrets, user records and uploaded documents are excluded from source releases. See [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md).
+MIT licensed application code. Dependencies and bundled catalog data retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). All secrets, user records and uploaded documents are excluded from source releases. See [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md).

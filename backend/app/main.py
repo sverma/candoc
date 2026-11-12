@@ -22,6 +22,7 @@ from .database import Base, SessionLocal, engine, get_db
 from .models import AuthSession, GitLabConnection, Introduction, LinkedInImport, PasswordReset, Profile, User, now
 from .resumes import MAX_UPLOAD, extract_resume
 from .security import COOKIE_NAME, COOKIE_SECURE, SESSION_DAYS, check_password, hash_password, rate_limit, token_hash
+from .verification_models import EmailVerification
 
 APP_URL = os.getenv('APP_URL', 'http://localhost:5173').rstrip('/')
 ALLOWED_ORIGINS = {APP_URL, *(value.strip().rstrip('/') for value in os.getenv('ALLOWED_ORIGINS', '').split(',') if value.strip())}
@@ -37,7 +38,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title='Candoc API', version='1.0.0', lifespan=lifespan, docs_url='/api/docs' if os.getenv('APP_ENV') != 'production' else None, openapi_url='/api/openapi.json' if os.getenv('APP_ENV') != 'production' else None, redoc_url=None)
+app = FastAPI(title='Candoc API', version='2.0.0', lifespan=lifespan, docs_url='/api/docs' if os.getenv('APP_ENV') != 'production' else None, openapi_url='/api/openapi.json' if os.getenv('APP_ENV') != 'production' else None, redoc_url=None)
 
 
 @app.middleware('http')
@@ -187,7 +188,10 @@ class IntroductionUpdate(StrictModel):
 
 
 def user_json(user):
-    return {'id': user.id, 'email': user.email, 'name': user.name, 'role': user.role, 'company_name': user.company_name}
+    from .verification import is_email_verified
+    db = object_session(user)
+    return {'id': user.id, 'email': user.email, 'name': user.name, 'role': user.role, 'company_name': user.company_name,
+            'email_verified': is_email_verified(user.id, db) if db else False}
 
 
 def redact_contact(value):
@@ -203,10 +207,13 @@ def redact_contact(value):
 
 
 def profile_json(profile, private=False):
+    from .preferences import professional_preferences
     data = {key: getattr(profile, key) for key in ['id', 'user_id', 'headline', 'location', 'bio', 'skills', 'years_experience', 'availability', 'github_url', 'linkedin_url', 'visible', 'assessment']}
     data.update(name=profile.user.name, created_at=profile.created_at.isoformat())
     gitlab_url, gitlab_consent = gitlab_connection_values(profile)
     data['gitlab_url'] = gitlab_url
+    db = object_session(profile)
+    data['work_preferences'] = professional_preferences(profile.id, db) if db else {}
     if not private and data['assessment']:
         data['assessment'] = redact_contact(data['assessment'])
     if private:
@@ -584,7 +591,12 @@ def rubric():
 
 
 @app.get('/api/candidates')
-def candidates(search: str = Query('', max_length=150), skill: str = Query('', max_length=60), location: str = Query('', max_length=100), min_score: Optional[float] = Query(None, ge=1, le=5), sort: Literal['recent', 'score'] = 'recent', user: Optional[User] = Depends(current_user), db: Session = Depends(get_db)):
+def candidates(search: str = Query('', max_length=150), skill: str = Query('', max_length=60), location: str = Query('', max_length=100), min_score: Optional[float] = Query(None, ge=1, le=5), sort: Literal['recent', 'score'] = 'recent',
+               engagement_type: str = Query('', max_length=30), work_mode: str = Query('', max_length=20),
+               relocation: Optional[bool] = None, sponsorship_need: str = Query('', max_length=30),
+               authorization_country: str = Query('', max_length=3), authorization_region: str = Query('', max_length=30),
+               preferred_country: str = Query('', max_length=3), preferred_region: str = Query('', max_length=30),
+               user: Optional[User] = Depends(current_user), db: Session = Depends(get_db)):
     if not user or user.role != 'company':
         return {'candidates': []}
     query = select(Profile).join(User).options(selectinload(Profile.user)).where(Profile.visible.is_(True))
@@ -601,7 +613,13 @@ def candidates(search: str = Query('', max_length=150), skill: str = Query('', m
         query = query.order_by(Profile.assessment['score'].as_float().desc().nullslast(), Profile.created_at.desc())
     else:
         query = query.order_by(Profile.created_at.desc())
-    return {'candidates': [profile_json(profile) for profile in db.scalars(query.limit(200)).all()]}
+    from .preferences import filter_preferences
+    filters = dict(engagement_type=engagement_type, work_mode=work_mode, relocation=relocation,
+                   sponsorship_need=sponsorship_need, authorization_country=authorization_country,
+                   authorization_region=authorization_region, preferred_country=preferred_country, preferred_region=preferred_region)
+    # Filter before applying the existing directory cap so matching records are not lost.
+    profiles = filter_preferences(db.scalars(query).all(), db, **filters) if any(value not in ('', None) for value in filters.values()) else db.scalars(query.limit(200)).all()
+    return {'candidates': [profile_json(profile) for profile in profiles[:200]]}
 
 
 @app.get('/api/candidates/{candidate_id}')
@@ -663,8 +681,11 @@ def decide_introduction(introduction_id: str, payload: IntroductionUpdate, user:
 
 @app.get('/api/account/export')
 def export_account(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    from .preferences import export_preferences
+    from .hiring import export_hiring
     data = {'user': user_json(user), 'exported_at': now().isoformat(),
-            'introductions': [introduction_json(item, user) for item in db.scalars(introduction_query(user)).all()]}
+            'introductions': [introduction_json(item, user) for item in db.scalars(introduction_query(user)).all()],
+            'work_preferences': export_preferences(user, db), 'hiring': export_hiring(user, db)}
     if user.role == 'candidate':
         data['profile'] = profile_json(user.profile, True)
         data['linkedin_imports'] = [{'created_at': item.created_at.isoformat(), 'result': item.result}
@@ -686,4 +707,13 @@ def delete_account(response: Response, user: User = Depends(require_user), db: S
 @app.get('/api/health')
 def health(db: Session = Depends(get_db)):
     db.execute(text('SELECT 1'))
-    return {'status': 'ok', 'service': 'candoc', 'version': '1.0.0'}
+    return {'status': 'ok', 'service': 'candoc', 'version': '2.0.0'}
+
+
+# Router factories import shared auth helpers only after their definitions exist.
+from .verification import build_router as build_verification_router
+from .preferences import build_router as build_preferences_router
+from .hiring import build_router as build_hiring_router
+app.include_router(build_verification_router())
+app.include_router(build_preferences_router())
+app.include_router(build_hiring_router())
